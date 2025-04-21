@@ -72,7 +72,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ARG LMCACHE_COMMIT_ID=1
 
-RUN git clone https://github.com/LMCache/LMCache.git
+RUN git clone --branch PxDy-enablement https://github.com/liranschour/LMCache.git
 RUN git clone https://github.com/LMCache/torchac_cuda.git
 
 
@@ -110,6 +110,8 @@ RUN patch /usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_stat
 RUN pip install nixl
 
 WORKDIR /workspace
-RUN git clone https://github.com/LMCache/LMCache.git
+RUN git clone --branch PxDy-enablement https://github.com/liranschour/LMCache.git
+
+RUN apt-get update && apt-get install -y iputils-ping
 
 ENTRYPOINT ["vllm", "serve"]
