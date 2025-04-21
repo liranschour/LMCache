@@ -3,7 +3,6 @@ import time
 from typing import List, Tuple
 
 import torch
-import zmq
 
 from lmcache.experimental.memory_management import (AdHocMemoryAllocator,
                                                     MemoryFormat, MemoryObj)
@@ -81,12 +80,17 @@ if __name__ == "__main__":
         enable_gc=True,
     )
 
-    context = zmq.Context()  # type: ignore
-    side_channel = context.socket(zmq.PAIR)  # type: ignore
     if args.role == "sender":
-        side_channel.bind(f"tcp://{args.host}:{args.port}")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((args.host, args.port))
+            s.listen()
+            print(f"Server listening on {args.host}:{args.port}...")
+            side_channel, addr = s.accept()
+        #side_channel.bind(f"tcp://{args.host}:{args.port}")
     else:
-        side_channel.connect(f"tcp://{args.host}:{args.port}")
+        side_channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        side_channel.connect((args.host, args.port))
+        #side_channel.connect(f"tcp://{args.host}:{args.port}")
 
     # Test the NIXLPipe
     pipe = NixlPipe(config, side_channel)
