@@ -140,18 +140,18 @@ class NixlPipe:
         local_meta = self._agent.get_agent_metadata()
         if nixl_config.role == NixlRole.SENDER:
             self.side_channel.send(local_meta)
-            remote_meta = self.side_channel.recv()
+            remote_meta = self.side_channel.recv(4096)
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode(
                 "utf-8")
         else:
-            remote_meta = self.side_channel.recv()
+            remote_meta = self.side_channel.recv(4096)
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode(
                 "utf-8")
             self.side_channel.send(local_meta)
 
         # Exchange the reg_descs
         if nixl_config.role == NixlRole.SENDER:
-            msg = self.side_channel.recv()
+            msg = self.side_channel.recv(4096)
             self._remote_xfer_descs = self._agent.deserialize_descs(msg)
             logger.info("Received remote transfer descriptors")
 
@@ -454,7 +454,7 @@ class NixlChannel:
                 #    "Received event on the side channel, processing message..."
                 #)
 
-                msg = self._side_channel.recv()
+                msg = self._side_channel.recv(4096)
                 if not msg:
                     logger.warn("Received empty message on the side channel")
                     time.sleep(0.1)  # Avoid busy waiting

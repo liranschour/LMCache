@@ -109,9 +109,11 @@ RUN patch /usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_stat
 
 RUN pip install nixl
 
+RUN apt-get update && apt-get install -y iputils-ping
+
+ARG CACHE_BUST=1
 WORKDIR /workspace
 RUN git clone --branch PxDy-enablement https://github.com/liranschour/LMCache.git && cd LMCache && git pull
 
-RUN apt-get update && apt-get install -y iputils-ping
 
 ENTRYPOINT ["vllm", "serve"]
