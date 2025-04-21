@@ -3,6 +3,7 @@ import time
 from typing import List, Tuple
 
 import torch
+import socket
 
 from lmcache.experimental.memory_management import (AdHocMemoryAllocator,
                                                     MemoryFormat, MemoryObj)
