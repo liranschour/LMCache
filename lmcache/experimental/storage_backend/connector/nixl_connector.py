@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 import torch
-import zmq
+import socket
+import select
 from nixl._api import nixl_agent
 
 from lmcache.config import LMCacheEngineMetadata
@@ -348,25 +349,10 @@ class NixlChannel:
     It will have some internal threads to handle the data receiving.
     """
 
-    def __init__(self, nixl_config: NixlConfig):
+    def __init__(self, nixl_config: NixlConfig, side_channel: socket.socket):
         self.nixl_config = nixl_config
 
-        # Initialize the ZeroMQ context
-        self._context = zmq.Context()  # type: ignore
-        self._side_channel = self._context.socket(zmq.PAIR)  # type: ignore
-
-        if nixl_config.role == NixlRole.SENDER:
-            self._side_channel.connect("tcp://{}:{}".format(
-                nixl_config.peer_host_name, nixl_config.peer_port))
-            self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
-        else:
-            self._side_channel.bind("tcp://{}:{}".format(
-                nixl_config.peer_host_name, nixl_config.peer_port))
-            self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
-            self._side_channel.setsockopt(
-                zmq.RCVTIMEO,  # type: ignore
-                5000  # Set a timeout for receiving to avoid blocking 
-            )
+        self._side_channel = side_channel
 
         # Create NIXL Pipe
         self._pipe = NixlPipe(nixl_config, self._side_channel)
@@ -434,16 +420,15 @@ class NixlChannel:
             offset += len(objs_read)
 
     def _receiver_loop(self):
-        poller = zmq.Poller()  # type: ignore
-        poller.register(self._side_channel, zmq.POLLIN)  # type: ignore
         # Use a shorter timeout to be more responsive to shutdown
-        POLL_TIMEOUT_MS = 1000  # 1s timeout
+        POLL_TIMEOUT_S = 1.0  # 1s timeout
+        sockets = [self._side_channel]
 
         while self._running:
             try:
                 # Wait for a request from the side channel with shorter timeout
-                evts = poller.poll(timeout=POLL_TIMEOUT_MS)
-                if not evts:
+                readable, _, _ = select.select(sockets, [], [], POLL_TIMEOUT_S)
+                if not readable:
                     #logger.debug(
                     #    "No events received on the side channel, continuing..."
                     #)

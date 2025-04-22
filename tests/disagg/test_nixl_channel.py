@@ -16,6 +16,7 @@ logger = init_logger(__name__)
 
 
 def generate_test_data(
+    args: argparse.Namespace,
     num_objs: int,
     shape: torch.Size,
     dtype: torch.dtype = torch.bfloat16
@@ -23,7 +24,7 @@ def generate_test_data(
     keys = []
     objs = []
     allocator = AdHocMemoryAllocator(
-        device='cuda',  # Assuming we are using CUDA for the test
+        device=args.device,
     )
     for i in range(num_objs):
         keys.append(
@@ -224,6 +225,10 @@ if __name__ == "__main__":
                         type=int,
                         default=1,
                         help='Number of rounds to run the experiment')
+    parser.add_argument('--device',
+                        type=str,
+                        default='cuda',
+                        help='buffer device to use')
     args = parser.parse_args()
 
     # Generate test data
@@ -239,11 +244,23 @@ if __name__ == "__main__":
         peer_host_name=args.host,
         peer_port=args.port,
         buffer_size=2**32,  # 4GB
-        buffer_device='cuda',
+        buffer_device=args.device,
+        enable_gc=True,
     )
 
+    if args.role == "sender":
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((args.host, args.port))
+            s.listen()
+            print(f"Server listening on {args.host}:{args.port}...")
+            side_channel, addr = s.accept()
+    else:
+        side_channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        side_channel.connect((args.host, args.port))
+
     # Create the NixlChannel
-    channel = NixlChannel(config)
+    channel = NixlChannel(config, side_channel)
 
     if args.role == "sender":
         throughputs = []
