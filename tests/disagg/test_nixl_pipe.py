@@ -88,6 +88,7 @@ if __name__ == "__main__":
 
     if args.role == "sender":
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((args.host, args.port))
             s.listen()
             print(f"Server listening on {args.host}:{args.port}...")

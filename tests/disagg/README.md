@@ -4,10 +4,10 @@
 
 ```bash
 # Terminal 1 (sender)
-UCX_TLS=cuda_ipc,cuda_copy,tcp CUDA_VISIBLE_DEVICES=0 python3 test_nixl_pipe.py --role sender
+UCX_TLS=cuda_ipc,cuda_copy,tcp CUDA_VISIBLE_DEVICES=0 python3 test_nixl_pipe.py --role sender [--device cpu]
  
 # Terminal 2 (receiver)
-UCX_TLS=cuda_ipc,cuda_copy,tcp CUDA_VISIBLE_DEVICES=1 python3 test_nixl_pipe.py --role receiver
+UCX_TLS=cuda_ipc,cuda_copy,tcp CUDA_VISIBLE_DEVICES=1 python3 test_nixl_pipe.py --role receiver [--device cpu]
 ```
 
 ## NIXL Channel
