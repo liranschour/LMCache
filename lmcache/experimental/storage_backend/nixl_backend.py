@@ -171,6 +171,7 @@ class NixlBackend(StorageBackendInterface):
         self._obj_pool = RecvObjPool(nixl_config.enable_gc)
         #self._data: dict[CacheEngineKey, MemoryObj] = {}
         #self._data_lock = threading.Lock()
+        self._config = nixl_config
 
         self._listener_thread = threading.Thread(
             target=self._listener_loop, daemon=True)
@@ -187,22 +188,29 @@ class NixlBackend(StorageBackendInterface):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('0.0.0.0', 5555))  # XXX Fixme
         s.listen()
-        print(f"Server listening on {args.host}:{args.port}...")
+        print(f"Server listening on 5555 ...")
 
         while True:
-            conn, addr = server.accept()
-            print(f"🔌 Connected by {addr}")
+            conn, addr = s.accept()
+            print(f"🔌 Connected by {addr} creating Nixl Channel")
 
-        self._nixl_channel = NixlChannel(config, side_channel) # XXX TODO insert this channel to map according to role
-        self._nixl_channel.register_receive_observer(
-            observer=self._nixl_observer)
+            self._nixl_channel = NixlChannel(self._config, side_channel) # XXX TODO insert this channel to map according to role
+            self._nixl_channel.register_receive_observer(
+                observer=self._nixl_observer)
 
     def create_channel(self, host: str, port: int):
-        side_channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        side_channel.connect((host, port))
+        max_attempts = 5
+        while True:
+            try:
+                side_channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                side_channel.connect((host, port))
+                break
+            except (ConnectionRefusedError, socket.timeout):
+                print("⏳ Server not ready, retrying in 1 second...")
+                time.sleep(1)
 
         # Create the NixlChannel
-        self._nixl_channel = NixlChannel(config, side_channel)
+        self._nixl_channel = NixlChannel(self._config, side_channel)
         self._nixl_channel.register_receive_observer(
             observer=self._nixl_observer)
 
