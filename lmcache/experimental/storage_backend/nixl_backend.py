@@ -176,9 +176,6 @@ class NixlBackend(StorageBackendInterface):
 
         self._nixl_observer = BasicNixlObserver(self._obj_pool)
 
-        self._nixl_channel.register_receive_observer(
-            observer=self._nixl_observer)
-
         self._registered_keys: list[CacheEngineKey] = []
         self._registered_metadatas: list[MemoryObjMetadata] = []
         self._num_payload_added = 0
@@ -195,6 +192,8 @@ class NixlBackend(StorageBackendInterface):
             print(f"🔌 Connected by {addr}")
 
         self._nixl_channel = NixlChannel(config, side_channel) # XXX TODO insert this channel to map according to role
+        self._nixl_channel.register_receive_observer(
+            observer=self._nixl_observer)
 
     def create_channel(self, host: str, port: int):
         side_channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -202,6 +201,8 @@ class NixlBackend(StorageBackendInterface):
 
         # Create the NixlChannel
         self._nixl_channel = NixlChannel(config, side_channel)
+        self._nixl_channel.register_receive_observer(
+            observer=self._nixl_observer)
 
     def contains(self, key: CacheEngineKey) -> bool:
         """
