@@ -139,7 +139,7 @@ class NixlPipe:
 
         local_meta = self._agent.get_agent_metadata()
         if nixl_config.role == NixlRole.SENDER:
-            self.side_channel.send(local_meta)
+            self.side_channel.sendall(local_meta)
             remote_meta = self.side_channel.recv(4096)
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode(
                 "utf-8")
@@ -147,7 +147,7 @@ class NixlPipe:
             remote_meta = self.side_channel.recv(4096)
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode(
                 "utf-8")
-            self.side_channel.send(local_meta)
+            self.side_channel.sendall(local_meta)
 
         # Exchange the reg_descs
         if nixl_config.role == NixlRole.SENDER:
@@ -162,7 +162,7 @@ class NixlPipe:
                 self.peer_name, self._remote_xfer_descs)
         else:
             # Receiver side, send the local descriptors
-            self.side_channel.send(
+            self.side_channel.sendall(
                 self._agent.get_serialized_descs(self._local_xfer_descs))
             logger.info("Sent local transfer descriptors to sender")
 
@@ -478,7 +478,7 @@ class NixlChannel:
                               metadatas=metadatas,
                               init_uuid=init_uuid)
 
-        self._side_channel.send(request.serialize())
+        self._side_channel.sendall(request.serialize())
         logger.debug(
             f"Sent the request with {len(keys)} keys and UUID: {init_uuid}")
 
@@ -579,8 +579,8 @@ class NixlChannel:
             if self._receiver_thread.is_alive():
                 logger.warning(
                     "Receiver thread did not shut down cleanly within timeout")
+        self._side_channel.shutdown(socket.SHUT_WR)
         self._side_channel.close()
-        self._context.term()
         self._pipe.close()
 
 
