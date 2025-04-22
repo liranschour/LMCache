@@ -455,7 +455,7 @@ class NixlChannel:
                 #    "Received event on the side channel, processing message..."
                 #)
 
-                request = recv_req()
+                request = self.recv_req()
 
                 logger.debug("Received request with %d keys and UUID: %s",
                              len(request.keys), request.init_uuid)
