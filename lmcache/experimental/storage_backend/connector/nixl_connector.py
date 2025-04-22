@@ -112,7 +112,7 @@ class NixlPipe:
     TRANSFER_BUFFER_SIZE = 128 * 1024 * 1024  # 32 MB
 
     def __init__(self, nixl_config: NixlConfig,
-                 side_channel: zmq.Socket):  # type: ignore
+                 side_channel: socket.socket):  # type: ignore
         self.nixl_config = nixl_config
         self.side_channel = side_channel
 
@@ -452,12 +452,6 @@ class NixlChannel:
                                                   keys=request.keys,
                                                   metadatas=request.metadatas)
 
-            except zmq.Again as e:  # type: ignore
-                # Handle the timeout when waiting for a message
-                logger.debug(
-                    "Timeout waiting for a message on the side channel: %s",
-                    str(e))
-                continue
             except Exception as e:
                 logger.error("Failed to process receiver loop: %s", str(e))
                 if self._running:

@@ -4,6 +4,7 @@ import time
 from typing import List, Tuple
 
 import torch
+import socket
 
 from lmcache.experimental.memory_management import (AdHocMemoryAllocator,
                                                     MemoryFormat, MemoryObj)
@@ -232,7 +233,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Generate test data
-    keys, objs = generate_test_data(args.num_objs,
+    keys, objs = generate_test_data(args, args.num_objs,
                                     torch.Size([32, 2, 256, 1024]))
     total_size = sum(obj.get_size() for obj in objs)
     logger.info(f"Generated {len(objs)} objects with total size "
