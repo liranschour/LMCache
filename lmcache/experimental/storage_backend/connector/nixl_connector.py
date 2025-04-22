@@ -391,10 +391,19 @@ class NixlChannel:
         return buf
 
     def recv_req(self):
-        raw_len = self.recv_exact(4)
+        try:
+            raw_len = self.recv_exact(4)
+        except ConnectionError:
+            # If length bytes couldn't be read, sender has closed
+            return None
+
         msg_len = struct.unpack('!I', raw_len)[0]
 
-        msg_data = self.recv_exact(msg_len)
+        try:
+            msg_data = self.recv_exact(msg_len)
+        except ConnectionError:
+            # Sender closed mid-message — invalid
+            return None
 
         return NixlRequest.deserialize(msg_data)
 
@@ -458,6 +467,9 @@ class NixlChannel:
                 #)
 
                 request = self.recv_req()
+                if request is None:
+                    print("Sender closed the connection. Exiting loop.")
+                    break
 
                 logger.debug("Received request with %d keys and UUID: %s",
                              len(request.keys), request.init_uuid)
