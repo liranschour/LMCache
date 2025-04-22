@@ -16,6 +16,7 @@ logger = init_logger(__name__)
 
 
 def generate_test_data(
+    args: argparse.Namespace,
     num_objs: int,
     shape: torch.Size,
     dtype: torch.dtype = torch.bfloat16
@@ -23,7 +24,7 @@ def generate_test_data(
     keys = []
     objs = []
     allocator = AdHocMemoryAllocator(
-        device='cuda',  # Assuming we are using CUDA for the test
+        device=args.device,
     )
     for i in range(num_objs):
         keys.append(
@@ -66,10 +67,14 @@ if __name__ == "__main__":
                         type=int,
                         default=1,
                         help='Number of rounds to run the experiment')
+    parser.add_argument('--device',
+                        type=str,
+                        default='cuda',
+                        help='buffer device to use')
 
     args = parser.parse_args()
 
-    keys, objs = generate_test_data(100, torch.Size([32, 2, 256, 1024]))
+    keys, objs = generate_test_data(args, 100, torch.Size([32, 2, 256, 1024]))
 
     # Common configuration
     config = NixlConfig(
@@ -77,7 +82,7 @@ if __name__ == "__main__":
         peer_host_name=args.host,
         peer_port=args.port,
         buffer_size=2**32,  # 4GB
-        buffer_device='cuda',
+        buffer_device=args.device,
         enable_gc=True,
     )
 
@@ -87,11 +92,9 @@ if __name__ == "__main__":
             s.listen()
             print(f"Server listening on {args.host}:{args.port}...")
             side_channel, addr = s.accept()
-        #side_channel.bind(f"tcp://{args.host}:{args.port}")
     else:
         side_channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         side_channel.connect((args.host, args.port))
-        #side_channel.connect(f"tcp://{args.host}:{args.port}")
 
     # Test the NIXLPipe
     pipe = NixlPipe(config, side_channel)
@@ -152,7 +155,7 @@ if __name__ == "__main__":
             # Check if the received objects are the same as the original objects
             for received_obj, original_obj in zip(received_objs, objs):
                 assert torch.allclose(received_obj.tensor,
-                                      original_obj.tensor.cpu()), \
+                                      original_obj.tensor), \
                         f"Data mismatch: received {received_obj.tensor.mean()}"\
                         f" but expected {original_obj.tensor.mean()}"
 

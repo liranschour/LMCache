@@ -125,8 +125,7 @@ class NixlPipe:
                                    device=nixl_config.buffer_device,
                                    dtype=torch.uint8)
 
-        pinned_buffer = self._buffer.cpu()
-        self._transfer_buffers = torch.split(pinned_buffer,
+        self._transfer_buffers = torch.split(self._buffer,
                                              NixlPipe.TRANSFER_BUFFER_SIZE,
                                              dim=0)
 
