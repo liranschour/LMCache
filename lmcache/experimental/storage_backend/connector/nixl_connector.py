@@ -379,6 +379,23 @@ class NixlChannel:
         # Current uuid used in the send transaction
         self._curr_uuid: Optional[str] = None
 
+    def recv_exact(self, n):
+        buf = b''
+        while len(buf) < n:
+            chunk = self._side_channel.recv(n - len(buf))
+            if not chunk:
+                raise ConnectionError("Socket closed before receiving full data")
+            buf += chunk
+        return buf
+
+    def recv_req(self):
+        raw_len = recv_exact(4)
+        msg_len = struct.unpack('!I', raw_len)[0]
+
+        msg_data = recv_exact(msg_len)
+
+        return NixlRequest.deserialize(msg_data)
+
     def _process_receive_transaction(self, init_uuid: str,
                                      keys: list[CacheEngineKey],
                                      metadatas: list[MemoryObjMetadata]):
@@ -438,13 +455,8 @@ class NixlChannel:
                 #    "Received event on the side channel, processing message..."
                 #)
 
-                msg = self._side_channel.recv(4096)
-                if not msg:
-                    logger.warn("Received empty message on the side channel")
-                    time.sleep(0.1)  # Avoid busy waiting
-                    continue
+                request = recv_req()
 
-                request = NixlRequest.deserialize(msg)
                 logger.debug("Received request with %d keys and UUID: %s",
                              len(request.keys), request.init_uuid)
 
@@ -478,7 +490,9 @@ class NixlChannel:
                               metadatas=metadatas,
                               init_uuid=init_uuid)
 
-        self._side_channel.sendall(request.serialize())
+        data = request.serialize()
+        length = struct.pack('!I', len(data))
+        self._side_channel.sendall(length + data)
         logger.debug(
             f"Sent the request with {len(keys)} keys and UUID: {init_uuid}")
 
