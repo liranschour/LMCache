@@ -170,7 +170,9 @@ class NixlBackend(StorageBackendInterface):
         #self._data: dict[CacheEngineKey, MemoryObj] = {}
         #self._data_lock = threading.Lock()
 
-        self._nixl_channel = NixlChannel(nixl_config)
+        self._listener_thread = threading.Thread(
+            target=self._listener_loop, daemon=True)
+        self.listener_thread.start()
 
         self._nixl_observer = BasicNixlObserver(self._obj_pool)
 
@@ -180,6 +182,19 @@ class NixlBackend(StorageBackendInterface):
         self._registered_keys: list[CacheEngineKey] = []
         self._registered_metadatas: list[MemoryObjMetadata] = []
         self._num_payload_added = 0
+
+    def _listener_loop(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((args.host, args.port))
+        s.listen()
+        print(f"Server listening on {args.host}:{args.port}...")
+
+        while True:
+            conn, addr = server.accept()
+            print(f"🔌 Connected by {addr}")
+
+        self._nixl_channel = NixlChannel(config, side_channel) # XXX TODO insert this channel to map according to role
 
     def contains(self, key: CacheEngineKey) -> bool:
         """

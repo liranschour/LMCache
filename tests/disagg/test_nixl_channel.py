@@ -261,7 +261,7 @@ if __name__ == "__main__":
         side_channel.connect((args.host, args.port))
 
     # Create the NixlChannel
-    channel = NixlChannel(config, side_channel)
+    self._nixl_channel = NixlChannel(config, side_channel)
 
     if args.role == "sender":
         throughputs = []

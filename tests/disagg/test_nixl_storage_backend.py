@@ -3,6 +3,7 @@ import time
 from typing import List, Tuple
 
 import torch
+import socket
 
 from lmcache.experimental.memory_management import (AdHocMemoryAllocator,
                                                     MemoryFormat, MemoryObj)
@@ -16,6 +17,7 @@ logger = init_logger(__name__)
 
 
 def generate_test_data(
+    args: argparse.Namespace,
     num_objs: int,
     shape: torch.Size,
     dtype: torch.dtype = torch.bfloat16
@@ -23,7 +25,7 @@ def generate_test_data(
     keys = []
     objs = []
     allocator = AdHocMemoryAllocator(
-        device='cuda',  # Assuming we are using CUDA for the test
+        device=args.device,
     )
     for i in range(num_objs):
         keys.append(
@@ -180,10 +182,14 @@ if __name__ == "__main__":
                         type=int,
                         default=1,
                         help='Number of rounds to run the experiment')
+    parser.add_argument('--device',
+                        type=str,
+                        default='cuda',
+                        help='buffer device to use')
     args = parser.parse_args()
 
     # Generate test data
-    keys, objs = generate_test_data(args.num_objs,
+    keys, objs = generate_test_data(args, args.num_objs,
                                     torch.Size([32, 2, 256, 1024]))
     total_size = sum(obj.get_size() for obj in objs)
     logger.info("Generated %d objects with total size %.2f MB", len(objs),
@@ -195,13 +201,15 @@ if __name__ == "__main__":
         peer_host_name=args.host,
         peer_port=args.port,
         buffer_size=2**32,  # 4GB
-        buffer_device='cuda',
+        buffer_device=args.device,
+        enable_gc=True,
     )
 
     # Create the NixlBackend
     backend = NixlBackend(config)
 
     if args.role == "sender":
+        backend.createChannel(args.host, args.port) # XXX todo add here a role
         throughputs = []
         for i in range(args.num_rounds):
             logger.info("Round %d/%d", i + 1, args.num_rounds)
