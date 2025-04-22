@@ -24,6 +24,8 @@ from typing import Optional, Union
 import torch
 import socket
 import select
+import struct
+
 from nixl._api import nixl_agent
 
 from lmcache.config import LMCacheEngineMetadata
@@ -389,10 +391,10 @@ class NixlChannel:
         return buf
 
     def recv_req(self):
-        raw_len = recv_exact(4)
+        raw_len = self.recv_exact(4)
         msg_len = struct.unpack('!I', raw_len)[0]
 
-        msg_data = recv_exact(msg_len)
+        msg_data = self.recv_exact(msg_len)
 
         return NixlRequest.deserialize(msg_data)
 
