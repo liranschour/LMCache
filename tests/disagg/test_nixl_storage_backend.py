@@ -209,7 +209,7 @@ if __name__ == "__main__":
     backend = NixlBackend(config)
 
     if args.role == "sender":
-        backend.createChannel(args.host, args.port) # XXX todo add here a role
+        backend.create_channel(args.host, args.port) # XXX todo add here a role
         throughputs = []
         for i in range(args.num_rounds):
             logger.info("Round %d/%d", i + 1, args.num_rounds)

@@ -17,6 +17,8 @@ import time
 from concurrent.futures import Future
 from typing import Optional
 
+import socket
+
 from lmcache.config import LMCacheEngineMetadata
 from lmcache.experimental.config import LMCacheEngineConfig
 from lmcache.experimental.memory_management import (MemoryObj,
@@ -183,7 +185,7 @@ class NixlBackend(StorageBackendInterface):
     def _listener_loop(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((args.host, args.port))
+        s.bind(('0.0.0.0', 5555))  # XXX Fixme
         s.listen()
         print(f"Server listening on {args.host}:{args.port}...")
 
