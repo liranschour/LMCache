@@ -191,7 +191,7 @@ class NixlBackend(StorageBackendInterface):
         print(f"Server listening on 5555 ...")
 
         while True:
-            conn, addr = s.accept()
+            side_channel, addr = s.accept()
             print(f"🔌 Connected by {addr} creating Nixl Channel")
 
             self._nixl_channel = NixlChannel(self._config, side_channel) # XXX TODO insert this channel to map according to role
