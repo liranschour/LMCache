@@ -313,7 +313,7 @@ class TensorMemoryObj(MemoryObj):
         num_elements = self.raw_data.numel()
         element_size = self.raw_data.element_size()
         size_in_bytes = num_elements * element_size
-        print(f"XXX {num_elements} {element_size}")
+        logger.info(f"XXX num_elements={num_elements} element_size={element_size}")
         return size_in_bytes
 
     def get_desc_id(self) -> int:
