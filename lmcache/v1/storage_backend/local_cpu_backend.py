@@ -233,7 +233,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     fmt = MemoryFormat.KV_T2D
             else:
                 fmt = MemoryFormat.KV_2LTD
-
+        print(f"XXXX inside allocate")
         memory_obj = self.memory_allocator.allocate(shape, dtype, fmt)
         if memory_obj is not None or not eviction:
             return memory_obj

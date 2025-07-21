@@ -546,7 +546,7 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
         self.explicit_list = sortedcontainers.SortedList(key=lambda x: x.start)
 
         self.explicit_list.add(FreeBlock(start=0, size=self.buffer.numel()))
-
+        print(f"XXXX Tensor Mem")
         # For debugging purposes
         self.num_active_allocations = 0
         self.total_allocated_size = 0
@@ -644,7 +644,7 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
                     size=block.size - aligned_size,
                 )
             )
-
+        print(f"XXX allocate block.start {block.start} align {aligned_size}")
         # TODO (Jiayi): need a flag to drop these debug ops
         # Update debug status
         self.total_allocated_size += aligned_size
@@ -900,6 +900,7 @@ class PagedTensorMemoryAllocator(MemoryAllocatorInterface):
             # NOTE: idx is the paged index
             # NOTE: the last unfull chunk's shape needs to be
             # adjusted during allocation.
+            print(f"XXX allocate block {idx}")
             metadata = MemoryObjMetadata(
                 self.shape,
                 self.dtype,
@@ -1283,7 +1284,7 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
         :param int size: The size of the pinned memory in bytes.
         """
         buffer = torch.empty(size, dtype=torch.uint8, pin_memory=True)
-
+        print(f"XXX contingious = {(buffer.is_contiguous())}")
         if use_paging:
             assert "shape" in kwargs, (
                 "shape must be specified for paged memory allocator"
@@ -1312,7 +1313,9 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
         dtype: Optional[torch.dtype],
         fmt: MemoryFormat = MemoryFormat.KV_2LTD,
     ) -> Optional[MemoryObj]:
+        print(f"XXXX mixed mem allocate")
         if fmt == MemoryFormat.BINARY_BUFFER:
+            print(f"XXXX A")
             return self.buffer_allocator.allocate(shape, dtype, fmt)
         elif fmt in [
             MemoryFormat.KV_2LTD,
@@ -1321,6 +1324,7 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
             MemoryFormat.KV_MLA_FMT,
         ]:
             with self.host_mem_lock:
+                print(f"XXXX B")
                 return self.pin_allocator.allocate(shape, dtype, fmt, self)
         else:
             raise ValueError(f"Unsupported memory format: {fmt}")
