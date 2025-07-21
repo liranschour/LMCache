@@ -128,8 +128,6 @@ class MemoryObjMetadata:
         size_in_bytes = num_elements * element_size
         return size_in_bytes
 
-    def get_desc_index():
-
     def to_dict(self):
         # Note(Kuntai): this is used for serializing MemoryObjMetadata via
         # msgpack.
