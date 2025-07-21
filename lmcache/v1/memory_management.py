@@ -317,7 +317,7 @@ class TensorMemoryObj(MemoryObj):
         return size_in_bytes
 
     def get_desc_id(self) -> int:
-        print(f"XXX {self.parent_allocator}")
+        print(f"XXX {self.parent_allocator} parent data_ptr =  {self.parent_allocator}")
         return 0
 
     def get_shape(self) -> torch.Size:
@@ -656,7 +656,7 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
                     size=block.size - aligned_size,
                 )
             )
-        print(f"XXX allocate block.start shape = {shape} type={dtype} {block.start} align {aligned_size}")
+        print(f"XXX allocate shape = {shape} type={dtype} block.start={block.start} aligned_size={aligned_size}")
         size_in_bytes = torch.tensor([], dtype=dtype).element_size() * torch.tensor(shape).prod().item()
         print(f"XXX {size_in_bytes}")
 
