@@ -128,6 +128,8 @@ class MemoryObjMetadata:
         size_in_bytes = num_elements * element_size
         return size_in_bytes
 
+    def get_desc_index():
+
     def to_dict(self):
         # Note(Kuntai): this is used for serializing MemoryObjMetadata via
         # msgpack.
@@ -181,6 +183,13 @@ class MemoryObj(metaclass=abc.ABCMeta):
     def get_size(self) -> int:
         """
         Get the size of the MemoryObj in bytes.
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_desc_id(self) -> int:
+        """
+        Get the index of the MemoryObj.
         """
         raise NotImplementedError
 
@@ -306,7 +315,12 @@ class TensorMemoryObj(MemoryObj):
         num_elements = self.raw_data.numel()
         element_size = self.raw_data.element_size()
         size_in_bytes = num_elements * element_size
+        print(f"XXX {num_elements} {element_size}")
         return size_in_bytes
+
+    def get_desc_id(self) -> int:
+        print(f"XXX {self.parent_allocator}")
+        return 0
 
     def get_shape(self) -> torch.Size:
         return self.meta.shape
