@@ -99,7 +99,7 @@ class LocalCPUBackend(StorageBackendInterface):
         """
         Synchronously put the MemoryObj into the local cpu backend.
         """
-        print(f"XXX memory_obj.metadata().address={memory_obj.metadata().address} {memory_obj.metadata().get_size()}")
+        print(f"XXX memory_obj.metadata.address={memory_obj.metadata.address} memory_obj.metadata.get_size()={memory_obj.metadata.get_size()}")
         with self.cpu_lock:
             if key in self.hot_cache:
                 old_memory_obj = self.hot_cache.pop(key)
