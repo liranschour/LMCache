@@ -656,7 +656,7 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
                     size=block.size - aligned_size,
                 )
             )
-        print(f"XXX allocate block.start shape = {shape} {block.start} align {aligned_size}")
+        print(f"XXX allocate block.start shape = {shape} type={dtype} {block.start} align {aligned_size}")
         # TODO (Jiayi): need a flag to drop these debug ops
         # Update debug status
         self.total_allocated_size += aligned_size
