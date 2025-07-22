@@ -532,6 +532,10 @@ class MemoryAllocatorInterface(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
+    @abc.abstractmethod
+    def get_mem_layout(self) -> Tuple[int, int]:
+        raise NotImplementedError
+
 class TensorMemoryAllocator(MemoryAllocatorInterface):
     """
     Implements a "explicit list" memory allocator.
@@ -552,6 +556,9 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
         self.total_allocated_size = 0
 
         self.stats_monitor = LMCStatsMonitor.GetOrCreate()
+
+    def get_mem_layout(self):
+        return (self.buffer.data_ptr(), self.buffer.numel() * self.buffer.element_size())
 
     @staticmethod
     @_lmcache_nvtx_annotate

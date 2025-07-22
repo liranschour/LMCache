@@ -152,6 +152,10 @@ class LocalCPUBackend(StorageBackendInterface):
         self._agent = nixl_agent(config.nixl_role)
         self._nixl_role = config.nixl_role
 
+        # Nixl register memory
+        mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
+        print(f"XXX {mem_base_addr} : {mem_size}")
+
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
 
