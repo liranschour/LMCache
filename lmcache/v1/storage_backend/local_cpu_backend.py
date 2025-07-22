@@ -322,7 +322,7 @@ class LocalCPUBackend(StorageBackendInterface):
         data = pickle.dumps(message)
 
         self._side_channel.send(data)
-        logger.debug("Sent the request with %d keys", len(request.keys))
+        logger.debug("Sent the request with %d keys", len(keys))
         # NIXL PUSH END
 
         return None
