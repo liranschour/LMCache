@@ -231,10 +231,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 #request = NixlRequest.deserialize(msg)
 
                 keys, metadatas = pickle.loads(msg)
-                print(f"Received request with %d keys from sender %s",
-                      len(keys),
-                      sender_id.decode(),
-                      )
+                print(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 # self._process_receive_transaction(
                 #     sender_id=sender_id,
