@@ -215,6 +215,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 # New sender connection
                 if not self._sender_id:
+                    self._sender_id  = sender_id  # HACK single sender for now
                     sender_meta = msg
                     # Now, msg should be the sender metadata
                     # Initialize a new pipe for this sender
