@@ -237,7 +237,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 for key, meta in zip(keys, metadatas, strict=False):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
 
-                    print(f"XXXX allocated {mem_obj})
+                    print(f"XXXX allocated {mem_obj}")
                 # self._process_receive_transaction(
                 #     sender_id=sender_id,
                 #     keys=request.keys,
