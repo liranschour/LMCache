@@ -42,14 +42,6 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-class NixlRole(enum.Enum):
-    """
-    Enum to represent the role of the Nixl connection.
-    """
-
-    SENDER = "sender"
-    RECEIVER = "receiver"
-
 class LocalCPUBackend(StorageBackendInterface):
     """
     The local cpu backend size is variable depending on how much free space is
@@ -84,12 +76,12 @@ class LocalCPUBackend(StorageBackendInterface):
         self.enable_blending = config.enable_blending
 
         # NIXL_PUSH_START
-        assert config.nixl_role in [NixlRole.SENDER, NixlRole.RECEIVER], (
+        assert config.nixl_role in ["sender", "receiver"], (
             f"Invalid role: {config.nixl_role}, must be either "
-            f"{NixlRole.SENDER} or {NixlRole.RECEIVER}"
+            f"sender or receiver"
         )
 
-        if config.nixl_role == NixlRole.SENDER:
+        if config.nixl_role == "sender":
             print(f"XXXX SENDER")
         else:
             print(f"XXX RECEIVER")
