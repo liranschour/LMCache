@@ -234,6 +234,10 @@ class LocalCPUBackend(StorageBackendInterface):
                 keys, metadatas = pickle.loads(msg)
                 print(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
+                for key, meta in zip(keys, metadatas, strict=False):
+                    mem_obj = self.allocate(meta.shape, meta.dtype)
+
+                    print(f"XXXX allocated {mem_obj})
                 # self._process_receive_transaction(
                 #     sender_id=sender_id,
                 #     keys=request.keys,
