@@ -38,6 +38,7 @@ from lmcache.v1.storage_backend.abstract_backend import StorageBackendInterface
 import zmq
 from nixl._api import nixl_agent
 import uuid
+from dataclasses import dataclass
 
 @dataclass
 class NixlRequest:
