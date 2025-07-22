@@ -42,6 +42,7 @@ import uuid
 from dataclasses import dataclass
 import msgpack
 import time
+import pickle
 
 @dataclass
 class NixlRequest:
@@ -226,9 +227,11 @@ class LocalCPUBackend(StorageBackendInterface):
                     logger.info(f"New sender connected with ID: {sender_id.decode()}")
                     continue
 
-                request = NixlRequest.deserialize(msg)
+                #request = NixlRequest.deserialize(msg)
+                received = socket.recv()
+                keys, metadatas = pickle.loads(received)
                 print(f"Received request with %d keys from sender %s",
-                      len(request.keys),
+                      len(keys),
                       sender_id.decode(),
                       )
 
@@ -312,9 +315,13 @@ class LocalCPUBackend(StorageBackendInterface):
             self.submit_put_task(key, memory_obj)
             metadatas.append(memory_obj.metadata)
 
-        request = NixlRequest(keys=keys, metadatas=metadatas)
+        # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
         print(f"XXX Send request {len(metadatas)}")
-        self._side_channel.send(request.serialize())
+
+        message = (keys, metadatas)
+        data = pickle.dumps(message)
+
+        self._side_channel.send(data)
         logger.debug("Sent the request with %d keys", len(request.keys))
         # NIXL PUSH END
 
