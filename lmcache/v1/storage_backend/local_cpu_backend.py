@@ -37,6 +37,7 @@ from lmcache.v1.memory_management import (
 from lmcache.v1.storage_backend.abstract_backend import StorageBackendInterface
 import zmq
 from nixl._api import nixl_agent
+import uuid
 
 if TYPE_CHECKING:
     # First Party
@@ -83,7 +84,7 @@ class LocalCPUBackend(StorageBackendInterface):
             f"sender or receiver"
         )
 
-        self._agent = nixl_agent(str(nixl_config.role) + str(nixl_config.buffer_device))
+        self._agent = nixl_agent(config.nixl_role)
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
@@ -99,11 +100,12 @@ class LocalCPUBackend(StorageBackendInterface):
                 zmq.IDENTITY,  # type: ignore
                 f"sender-{uuid.uuid4().hex}".encode(),
             )  # type: ignore
-            self._side_channel.connect("tcp://{}:{}".format(nixl_config.receiver_host, nixl_config.receiver_port))
+            worker_id = 0 # HACK for now
+            self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
 
-            self.side_channel.send(local_meta)
-            remote_meta = self.side_channel.recv()
+            self._side_channel.send(local_meta)
+            remote_meta = self._side_channel.recv()
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
 
             print(f"SENDER end handshake")
@@ -114,8 +116,9 @@ class LocalCPUBackend(StorageBackendInterface):
             self._context = zmq.Context()  # type: ignore
             # Change from PAIR to ROUTER socket
             self._side_channel = self._context.socket(zmq.ROUTER)  # type: ignore
+            worker_id = 0 # HACK for now
             self._side_channel.bind(
-                "tcp://{}:{}".format(nixl_config.receiver_host, nixl_config.receiver_port)
+                "tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id)
             )
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
             # Add a timeout for the side channel
@@ -164,7 +167,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         "The sender_meta should be provided on the receiver side"
                     )
                     self.peer_name = self._agent.add_remote_agent(sender_meta).decode("utf-8")
-                    self.side_channel.send(local_meta)
+                    self._side_channel.send(local_meta)
                     print(f"XXX RECEIVER end handshake")
                     logger.info(f"New sender connected with ID: {sender_id.decode()}")
                     continue
