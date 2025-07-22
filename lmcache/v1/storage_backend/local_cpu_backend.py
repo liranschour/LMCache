@@ -101,10 +101,12 @@ class LocalCPUBackend(StorageBackendInterface):
                 f"sender-{uuid.uuid4().hex}".encode(),
             )  # type: ignore
             worker_id = 0 # HACK for now
+            print(f"XXX before connect")
             self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
-
+            print(f"XXX before send")
             self._side_channel.send(local_meta)
+            print(f"XXX before receive")
             remote_meta = self._side_channel.recv()
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
 
@@ -167,7 +169,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         "The sender_meta should be provided on the receiver side"
                     )
                     self.peer_name = self._agent.add_remote_agent(sender_meta).decode("utf-8")
-                    self._side_channel.send(local_meta)
+                    self._side_channel.send_multipart([sender_id, local_meta])
                     print(f"XXX RECEIVER end handshake")
                     logger.info(f"New sender connected with ID: {sender_id.decode()}")
                     continue
