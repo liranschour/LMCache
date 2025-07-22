@@ -316,12 +316,11 @@ class LocalCPUBackend(StorageBackendInterface):
             metadatas.append(memory_obj.metadata)
 
         # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-        print(f"XXX Send request {len(metadatas)}")
-
         message = (keys, metadatas)
         data = pickle.dumps(message)
 
         self._side_channel.send(data)
+        print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
         logger.debug("Sent the request with %d keys", len(keys))
         # NIXL PUSH END
 
