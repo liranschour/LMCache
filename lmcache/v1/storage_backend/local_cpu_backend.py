@@ -39,6 +39,57 @@ import zmq
 from nixl._api import nixl_agent
 import uuid
 
+@dataclass
+class NixlRequest:
+    """
+    A dataclass to represent a request received from the remote peer.
+    This can be used to encapsulate the request information.
+    """
+
+    keys: list[CacheEngineKey]
+    metadatas: list[MemoryObjMetadata]
+
+    @staticmethod
+    def encode_custom(obj):
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        raise TypeError(f"Object of type {type(obj).__name__} is not serializable")
+
+    @staticmethod
+    def decode_custom(d):
+        if "__type__" not in d:
+            return d
+        t = d["__type__"]
+        if t == "CacheEngineKey":
+            return CacheEngineKey.from_dict(d)
+        elif t == "MemoryObjMetadata":
+            return MemoryObjMetadata.from_dict(d)
+        elif t == "NixlRequest":
+            return NixlRequest.from_dict(d)
+        else:
+            return d
+
+    def to_dict(self):
+        return {
+            "__type__": "NixlRequest",
+            "keys": [k.to_dict() for k in self.keys],
+            "metadatas": [m.to_dict() for m in self.metadatas],
+        }
+
+    @staticmethod
+    def from_dict(d):
+        # Note(Kuntai): msgpack will automatically deserialize internal objects,
+        # meaning d["keys"] and d["metadatas"] are already deserialized.
+        return NixlRequest(keys=d["keys"], metadatas=d["metadatas"])
+
+    def serialize(self) -> bytes:
+        return msgpack.packb(self, default=NixlRequest.encode_custom)
+
+    @staticmethod
+    def deserialize(s: bytes) -> "NixlRequest":
+        return msgpack.unpackb(s, object_hook=NixlRequest.decode_custom)
+
+
 if TYPE_CHECKING:
     # First Party
     from lmcache.v1.cache_controller.worker import LMCacheWorker
@@ -101,12 +152,9 @@ class LocalCPUBackend(StorageBackendInterface):
                 f"sender-{uuid.uuid4().hex}".encode(),
             )  # type: ignore
             worker_id = 0 # HACK for now
-            print(f"XXX before connect")
             self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
-            print(f"XXX before send")
             self._side_channel.send(local_meta)
-            print(f"XXX before receive")
             remote_meta = self._side_channel.recv()
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
 
@@ -174,12 +222,11 @@ class LocalCPUBackend(StorageBackendInterface):
                     logger.info(f"New sender connected with ID: {sender_id.decode()}")
                     continue
 
-                # request = NixlRequest.deserialize(msg)
-                # logger.debug(
-                #     "Received request with %d keys from sender %s",
-                #     len(request.keys),
-                #     sender_id.decode(),
-                # )
+                request = NixlRequest.deserialize(msg)
+                print(f "Received request with %d keys from sender %s",
+                      len(request.keys),
+                      sender_id.decode(),
+                      )
 
                 # self._process_receive_transaction(
                 #     sender_id=sender_id,
@@ -255,6 +302,15 @@ class LocalCPUBackend(StorageBackendInterface):
         # TODO(Jiayi): optimize this with batching
         for key, memory_obj in zip(keys, memory_objs, strict=False):
             self.submit_put_task(key, memory_obj)
+
+        # NIXL PUSH START
+        # Initialize connection using side channel
+        print(f"XXX Send request")
+        request = NixlRequest(keys=keys, metadatas=metadatas)
+
+        self._side_channel.send(request.serialize())
+        logger.debug("Sent the request with %d keys", len(request.keys))
+        # NIXL PUSH END
 
         return None
 
