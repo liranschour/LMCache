@@ -185,13 +185,6 @@ class MemoryObj(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_desc_id(self) -> int:
-        """
-        Get the index of the MemoryObj.
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
     def get_shape(self) -> torch.Size:
         """
         Get the shape of the MemoryObj.
