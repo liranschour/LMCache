@@ -43,6 +43,7 @@ from dataclasses import dataclass
 import msgpack
 import time
 import pickle
+import math
 
 @dataclass
 class NixlRequest:
