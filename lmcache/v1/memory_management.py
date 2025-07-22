@@ -1315,6 +1315,9 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
 
         self.buffer_allocator = BufferAllocator("cpu")
 
+    def get_mem_layout(self):
+        return (self.buffer.data_ptr(), self.buffer.numel() * self.buffer.element_size())
+
     @_lmcache_nvtx_annotate
     def allocate(
         self,
