@@ -229,8 +229,8 @@ class LocalCPUBackend(StorageBackendInterface):
                     continue
 
                 #request = NixlRequest.deserialize(msg)
-                received = socket.recv()
-                keys, metadatas = pickle.loads(received)
+
+                keys, metadatas = pickle.loads(msg)
                 print(f"Received request with %d keys from sender %s",
                       len(keys),
                       sender_id.decode(),
