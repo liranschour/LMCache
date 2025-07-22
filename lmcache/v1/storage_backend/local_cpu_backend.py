@@ -33,6 +33,7 @@ from lmcache.v1.memory_management import (
     MemoryFormat,
     MemoryObj,
     MixedMemoryAllocator,
+    MemoryObjMetadata,
 )
 from lmcache.v1.storage_backend.abstract_backend import StorageBackendInterface
 import zmq
