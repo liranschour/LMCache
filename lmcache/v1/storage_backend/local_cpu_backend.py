@@ -301,15 +301,17 @@ class LocalCPUBackend(StorageBackendInterface):
         if not self.use_hot:
             return None
 
+        # NIXL PUSH START
+
         # TODO(Jiayi): optimize this with batching
+        print(f"XXX Send request")
+        metadatas = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
             self.submit_put_task(key, memory_obj)
+            metadatas.append(memory_obj.metadata)
 
-        # NIXL PUSH START
-        # Initialize connection using side channel
-        print(f"XXX Send request")
         request = NixlRequest(keys=keys, metadatas=metadatas)
-
+        print(f"XXX Send request {len(metadatas)}")
         self._side_channel.send(request.serialize())
         logger.debug("Sent the request with %d keys", len(request.keys))
         # NIXL PUSH END
