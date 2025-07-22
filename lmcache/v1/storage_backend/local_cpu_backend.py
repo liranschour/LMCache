@@ -234,10 +234,19 @@ class LocalCPUBackend(StorageBackendInterface):
                 keys, metadatas = pickle.loads(msg)
                 print(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
+                memory_objs = []
                 for key, meta in zip(keys, metadatas, strict=False):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
+                    memory_objs.append(mem_obj)
 
-                    print(f"XXXX allocated {mem_obj}")
+                    print(f"XXXX Need to READ data to allocated {mem_obj}")
+
+                self.batched_submit_put_task(keys, memory_objs)
+                print(f"XXX Submitted to cache")
+
+                for memory_obj in memory_objs:
+                    memory_obj.ref_count_down()
+
                 # self._process_receive_transaction(
                 #     sender_id=sender_id,
                 #     keys=request.keys,
