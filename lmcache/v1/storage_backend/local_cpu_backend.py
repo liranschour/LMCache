@@ -223,7 +223,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     continue
 
                 request = NixlRequest.deserialize(msg)
-                print(f "Received request with %d keys from sender %s",
+                print(f"Received request with %d keys from sender %s",
                       len(request.keys),
                       sender_id.decode(),
                       )
