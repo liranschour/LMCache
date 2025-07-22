@@ -313,12 +313,7 @@ class TensorMemoryObj(MemoryObj):
         num_elements = self.raw_data.numel()
         element_size = self.raw_data.element_size()
         size_in_bytes = num_elements * element_size
-        logger.info(f"XXX num_elements={num_elements} element_size={element_size}")
         return size_in_bytes
-
-    def get_desc_id(self) -> int:
-        print(f"XXX {self.parent_allocator} parent data_ptr =  {self.parent_allocator}")
-        return 0
 
     def get_shape(self) -> torch.Size:
         return self.meta.shape
@@ -558,7 +553,7 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
         self.explicit_list = sortedcontainers.SortedList(key=lambda x: x.start)
 
         self.explicit_list.add(FreeBlock(start=0, size=self.buffer.numel()))
-        print(f"XXXX Tensor Mem")
+
         # For debugging purposes
         self.num_active_allocations = 0
         self.total_allocated_size = 0
@@ -658,7 +653,6 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
             )
         print(f"XXX allocate shape = {shape} type={dtype} block.start={block.start} aligned_size={aligned_size}")
         size_in_bytes = torch.tensor([], dtype=dtype).element_size() * torch.tensor(shape).prod().item()
-        print(f"XXX {size_in_bytes}")
 
         # TODO (Jiayi): need a flag to drop these debug ops
         # Update debug status
@@ -915,7 +909,7 @@ class PagedTensorMemoryAllocator(MemoryAllocatorInterface):
             # NOTE: idx is the paged index
             # NOTE: the last unfull chunk's shape needs to be
             # adjusted during allocation.
-            print(f"XXX allocate block {idx}")
+
             metadata = MemoryObjMetadata(
                 self.shape,
                 self.dtype,
@@ -1299,7 +1293,7 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
         :param int size: The size of the pinned memory in bytes.
         """
         buffer = torch.empty(size, dtype=torch.uint8, pin_memory=True)
-        print(f"XXX contingious = {(buffer.is_contiguous())}")
+
         if use_paging:
             assert "shape" in kwargs, (
                 "shape must be specified for paged memory allocator"
@@ -1328,9 +1322,7 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
         dtype: Optional[torch.dtype],
         fmt: MemoryFormat = MemoryFormat.KV_2LTD,
     ) -> Optional[MemoryObj]:
-        print(f"XXXX mixed mem allocate")
         if fmt == MemoryFormat.BINARY_BUFFER:
-            print(f"XXXX A")
             return self.buffer_allocator.allocate(shape, dtype, fmt)
         elif fmt in [
             MemoryFormat.KV_2LTD,
@@ -1339,7 +1331,6 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
             MemoryFormat.KV_MLA_FMT,
         ]:
             with self.host_mem_lock:
-                print(f"XXXX B")
                 return self.pin_allocator.allocate(shape, dtype, fmt, self)
         else:
             raise ValueError(f"Unsupported memory format: {fmt}")

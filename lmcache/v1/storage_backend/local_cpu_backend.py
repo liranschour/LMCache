@@ -239,7 +239,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
 
-                    print(f"XXXX Need to READ data to allocated {mem_obj}")
+                print(f"XXXX Need to READ data to allocated {memory_objs}")
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
@@ -288,7 +288,6 @@ class LocalCPUBackend(StorageBackendInterface):
         """
         Synchronously put the MemoryObj into the local cpu backend.
         """
-        print(f"XXX memory_obj.metadata.address={memory_obj.metadata.address} memory_obj.metadata.get_size()={memory_obj.metadata.get_size()}")
         with self.cpu_lock:
             if key in self.hot_cache:
                 old_memory_obj = self.hot_cache.pop(key)

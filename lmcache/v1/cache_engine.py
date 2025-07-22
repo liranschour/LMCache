@@ -211,7 +211,6 @@ class LMCacheEngine:
             memory_objs.append(memory_obj)
             tot_kv_size += memory_obj.get_size()
             tot_token_num += num_tokens
-            memory_obj.get_desc_id()
 
         self.gpu_connector.batched_from_gpu(memory_objs, starts, ends, **kwargs)
         offload_time += time.perf_counter() - t
