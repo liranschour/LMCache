@@ -41,6 +41,7 @@ from nixl._api import nixl_agent
 import uuid
 from dataclasses import dataclass
 import msgpack
+import time
 
 @dataclass
 class NixlRequest:
