@@ -321,7 +321,6 @@ class LocalCPUBackend(StorageBackendInterface):
         # NIXL PUSH START
 
         # TODO(Jiayi): optimize this with batching
-        print(f"XXX Send request")
         metadatas = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
             self.submit_put_task(key, memory_obj)
@@ -332,6 +331,7 @@ class LocalCPUBackend(StorageBackendInterface):
             message = (keys, metadatas)
             data = pickle.dumps(message)
 
+            print(f"XXX Send request")
             self._side_channel.send(data)
             print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
             logger.debug("Sent the request with %d keys", len(keys))
