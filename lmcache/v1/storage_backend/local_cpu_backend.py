@@ -141,6 +141,7 @@ class LocalCPUBackend(StorageBackendInterface):
         )
 
         self._agent = nixl_agent(config.nixl_role)
+        self._nixl_role = config.nixl_role
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
@@ -313,13 +314,14 @@ class LocalCPUBackend(StorageBackendInterface):
             self.submit_put_task(key, memory_obj)
             metadatas.append(memory_obj.metadata)
 
-        # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-        message = (keys, metadatas)
-        data = pickle.dumps(message)
+        if self._nixl_role == "sender":
+            # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
+            message = (keys, metadatas)
+            data = pickle.dumps(message)
 
-        self._side_channel.send(data)
-        print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
-        logger.debug("Sent the request with %d keys", len(keys))
+            self._side_channel.send(data)
+            print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
+            logger.debug("Sent the request with %d keys", len(keys))
         # NIXL PUSH END
 
         return None
