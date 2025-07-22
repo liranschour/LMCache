@@ -91,7 +91,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if config.nixl_role == NixlRole.SENDER:
             print(f"XXXX SENDER")
-        else if config.role == NixlRole.RECEIVER:
+        else:
             print(f"XXX RECEIVER")
         # NIXL_PUSH_END
 
