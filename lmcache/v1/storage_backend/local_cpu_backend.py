@@ -42,6 +42,13 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
+class NixlRole(enum.Enum):
+    """
+    Enum to represent the role of the Nixl connection.
+    """
+
+    SENDER = "sender"
+    RECEIVER = "receiver"
 
 class LocalCPUBackend(StorageBackendInterface):
     """
@@ -75,6 +82,18 @@ class LocalCPUBackend(StorageBackendInterface):
 
         self.layerwise = config.use_layerwise
         self.enable_blending = config.enable_blending
+
+        # NIXL_PUSH_START
+        assert config.nixl_role in [NixlRole.SENDER, NixlRole.RECEIVER], (
+            f"Invalid role: {config.nixl_role}, must be either "
+            f"{NixlRole.SENDER} or {NixlRole.RECEIVER}"
+        )
+
+        if config.nixl_role == NixlRole.SENDER:
+            print(f"XXXX SENDER")
+        else if config.role == NixlRole.RECEIVER:
+            print(f"XXX RECEIVER")
+        # NIXL_PUSH_END
 
     def __str__(self):
         return self.__class__.__name__
