@@ -135,6 +135,14 @@ class LocalCPUBackend(StorageBackendInterface):
         self.enable_blending = config.enable_blending
 
         # NIXL_PUSH_START
+
+        # HACK static calculation of token size in bytes
+        shape = (2, 32, 1, 1024)
+        dtype = torch.bfloat16
+
+        self._nixl_block_size = (math.prod(shape)) * (torch.tensor([], dtype=dtype).element_size())
+        print(f"XXX nixl block size={self._nixl_block_size}")
+
         assert config.nixl_role in ["sender", "receiver"], (
             f"Invalid role: {config.nixl_role}, must be either "
             f"sender or receiver"
