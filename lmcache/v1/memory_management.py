@@ -532,6 +532,10 @@ class MemoryAllocatorInterface(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
+    @abc.abstractmethod
+    def get_mem_layout(self) -> Tuple[int, int]:
+        raise NotImplementedError
+
 class TensorMemoryAllocator(MemoryAllocatorInterface):
     """
     Implements a "explicit list" memory allocator.
@@ -552,6 +556,9 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
         self.total_allocated_size = 0
 
         self.stats_monitor = LMCStatsMonitor.GetOrCreate()
+
+    def get_mem_layout(self):
+        return (self.buffer.data_ptr(), self.buffer.numel() * self.buffer.element_size())
 
     @staticmethod
     @_lmcache_nvtx_annotate
@@ -922,6 +929,9 @@ class PagedTensorMemoryAllocator(MemoryAllocatorInterface):
 
         self.stats_monitor = LMCStatsMonitor.GetOrCreate()
 
+    def get_mem_layout(self):
+        return (self.buffer.data_ptr(), self.buffer.numel() * self.buffer.element_size())
+
     @staticmethod
     @_lmcache_nvtx_annotate
     def _Compute_raw_size(shape: torch.Size, dtype: torch.dtype) -> int:
@@ -1110,6 +1120,9 @@ class BufferAllocator(MemoryAllocatorInterface):
         """
         self.device = device
 
+    def get_mem_layout(self):
+        return 0
+
     @_lmcache_nvtx_annotate
     def allocate(
         self,
@@ -1171,6 +1184,9 @@ class HostMemoryAllocator(MemoryAllocatorInterface):
             self.allocator = TensorMemoryAllocator(buffer)
 
         self.host_mem_lock = threading.Lock() if not use_paging else nullcontext()
+
+    def get_mem_layout(self):
+        return (self.buffer.data_ptr(), self.buffer.numel() * self.buffer.element_size())
 
     @_lmcache_nvtx_annotate
     def allocate(
@@ -1235,6 +1251,9 @@ class PinMemoryAllocator(MemoryAllocatorInterface):
             self.allocator = TensorMemoryAllocator(buffer)
 
         self.host_mem_lock = threading.Lock() if not use_paging else nullcontext()
+
+    def get_mem_layout(self):
+        return (self.buffer.data_ptr(), self.buffer.numel() * self.buffer.element_size())
 
     @_lmcache_nvtx_annotate
     def allocate(
@@ -1304,6 +1323,9 @@ class MixedMemoryAllocator(MemoryAllocatorInterface):
         self.host_mem_lock = threading.Lock() if not use_paging else nullcontext()
 
         self.buffer_allocator = BufferAllocator("cpu")
+
+    def get_mem_layout(self):
+        return self.pin_allocator.get_mem_layout()
 
     @_lmcache_nvtx_annotate
     def allocate(
@@ -1425,6 +1447,9 @@ class GPUMemoryAllocator(MemoryAllocatorInterface):
 
         self.device_mem_lock = threading.Lock() if not use_paging else nullcontext()
 
+    def get_mem_layout(self):
+        return (self.tensor.data_ptr(), self.tensor.numel() * self.tensor.element_size())
+
     @_lmcache_nvtx_annotate
     def allocate(
         self,
@@ -1470,6 +1495,9 @@ class AdHocMemoryAllocator(MemoryAllocatorInterface):
         :param str device: The device of the ad hoc memory allocator.
         """
         self.device = device
+
+    def get_mem_layout(self):
+        return 0
 
     @_lmcache_nvtx_annotate
     def allocate(

@@ -33,15 +33,74 @@ from lmcache.v1.memory_management import (
     MemoryFormat,
     MemoryObj,
     MixedMemoryAllocator,
+    MemoryObjMetadata,
 )
 from lmcache.v1.storage_backend.abstract_backend import StorageBackendInterface
+import zmq
+from nixl._api import nixl_agent
+import uuid
+from dataclasses import dataclass
+import msgpack
+import time
+import pickle
+import math
+
+@dataclass
+class NixlRequest:
+    """
+    A dataclass to represent a request received from the remote peer.
+    This can be used to encapsulate the request information.
+    """
+
+    keys: list[CacheEngineKey]
+    metadatas: list[MemoryObjMetadata]
+
+    @staticmethod
+    def encode_custom(obj):
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        raise TypeError(f"Object of type {type(obj).__name__} is not serializable")
+
+    @staticmethod
+    def decode_custom(d):
+        if "__type__" not in d:
+            return d
+        t = d["__type__"]
+        if t == "CacheEngineKey":
+            return CacheEngineKey.from_dict(d)
+        elif t == "MemoryObjMetadata":
+            return MemoryObjMetadata.from_dict(d)
+        elif t == "NixlRequest":
+            return NixlRequest.from_dict(d)
+        else:
+            return d
+
+    def to_dict(self):
+        return {
+            "__type__": "NixlRequest",
+            "keys": [k.to_dict() for k in self.keys],
+            "metadatas": [m.to_dict() for m in self.metadatas],
+        }
+
+    @staticmethod
+    def from_dict(d):
+        # Note(Kuntai): msgpack will automatically deserialize internal objects,
+        # meaning d["keys"] and d["metadatas"] are already deserialized.
+        return NixlRequest(keys=d["keys"], metadatas=d["metadatas"])
+
+    def serialize(self) -> bytes:
+        return msgpack.packb(self, default=NixlRequest.encode_custom)
+
+    @staticmethod
+    def deserialize(s: bytes) -> "NixlRequest":
+        return msgpack.unpackb(s, object_hook=NixlRequest.decode_custom)
+
 
 if TYPE_CHECKING:
     # First Party
     from lmcache.v1.cache_controller.worker import LMCacheWorker
 
 logger = init_logger(__name__)
-
 
 class LocalCPUBackend(StorageBackendInterface):
     """
@@ -76,6 +135,149 @@ class LocalCPUBackend(StorageBackendInterface):
         self.layerwise = config.use_layerwise
         self.enable_blending = config.enable_blending
 
+        # NIXL_PUSH_START
+
+        # HACK static calculation of token size in bytes
+        shape = (2, 32, 1, 1024)
+        dtype = torch.bfloat16
+
+        self._nixl_block_size = (math.prod(shape)) * (torch.tensor([], dtype=dtype).element_size())
+        print(f"XXX nixl block size={self._nixl_block_size}")
+
+        assert config.nixl_role in ["sender", "receiver"], (
+            f"Invalid role: {config.nixl_role}, must be either "
+            f"sender or receiver"
+        )
+
+        self._agent = nixl_agent(config.nixl_role)
+        self._nixl_role = config.nixl_role
+
+        # Nixl register memory
+        mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
+        print(f"XXX {mem_base_addr} : {mem_size}")
+
+        if config.nixl_role == "sender":
+            print(f"XXXX SENDER")
+
+            local_meta = self._agent.get_agent_metadata()
+
+            # Initialize the ZeroMQ context and side channel
+            self._context = zmq.Context()  # type: ignore
+            # Change from PAIR to DEALER socket
+            self._side_channel = self._context.socket(zmq.DEALER)  # type: ignore
+            # Set an identity for this DEALER socket
+            self._side_channel.setsockopt(
+                zmq.IDENTITY,  # type: ignore
+                f"sender-{uuid.uuid4().hex}".encode(),
+            )  # type: ignore
+            worker_id = 0 # HACK for now
+            self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
+            self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
+            self._side_channel.send(local_meta)
+            remote_meta = self._side_channel.recv()
+            self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
+
+            print(f"SENDER end handshake")
+        else:
+            print(f"XXX RECEIVER")
+
+            # Initialize the ZeroMQ context and side channel
+            self._context = zmq.Context()  # type: ignore
+            # Change from PAIR to ROUTER socket
+            self._side_channel = self._context.socket(zmq.ROUTER)  # type: ignore
+            worker_id = 0 # HACK for now
+            self._side_channel.bind(
+                "tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id)
+            )
+            self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
+            # Add a timeout for the side channel
+            self._side_channel.setsockopt(
+                zmq.RCVTIMEO,  # type: ignore
+                5000,  # Set a timeout for receiving to avoid blocking
+            )
+
+            # Start the receiver thread
+            self._running = True
+            self._receiver_thread = threading.Thread(
+                target=self._receiver_loop, daemon=True
+            )
+            self._sender_id = None
+            self._receiver_thread.start()
+
+        # NIXL_PUSH_END
+
+    def _receiver_loop(self):
+        poller = zmq.Poller()  # type: ignore
+        poller.register(self._side_channel, zmq.POLLIN)  # type: ignore
+        # Use a shorter timeout to be more responsive to shutdown
+        POLL_TIMEOUT_MS = 1000  # 1s timeout
+
+        local_meta = self._agent.get_agent_metadata()
+
+        while self._running:
+            try:
+                # Wait for a request from the side channel with shorter timeout
+                evts = poller.poll(timeout=POLL_TIMEOUT_MS)
+                if not evts:
+                    continue
+
+                sender_id, msg = self._side_channel.recv_multipart()
+                if not msg:
+                    logger.warn("Received empty message on the side channel")
+                    time.sleep(0.1)  # Avoid busy waiting
+                    continue
+
+                # New sender connection
+                if not self._sender_id:
+                    self._sender_id  = sender_id  # HACK single sender for now
+                    sender_meta = msg
+                    # Now, msg should be the sender metadata
+                    # Initialize a new pipe for this sender
+                    assert sender_meta is not None, (
+                        "The sender_meta should be provided on the receiver side"
+                    )
+                    self.peer_name = self._agent.add_remote_agent(sender_meta).decode("utf-8")
+                    self._side_channel.send_multipart([sender_id, local_meta])
+                    print(f"XXX RECEIVER end handshake")
+                    logger.info(f"New sender connected with ID: {sender_id.decode()}")
+                    continue
+
+                #request = NixlRequest.deserialize(msg)
+
+                keys, metadatas = pickle.loads(msg)
+                print(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+
+                memory_objs = []
+                for key, meta in zip(keys, metadatas, strict=False):
+                    mem_obj = self.allocate(meta.shape, meta.dtype)
+                    memory_objs.append(mem_obj)
+
+                print(f"XXXX Need to READ data to allocated {memory_objs}")
+
+                self.batched_submit_put_task(keys, memory_objs)
+                print(f"XXX Submitted to cache")
+
+                for memory_obj in memory_objs:
+                    memory_obj.ref_count_down()
+
+                # self._process_receive_transaction(
+                #     sender_id=sender_id,
+                #     keys=request.keys,
+                #     metadatas=request.metadatas,
+                # )
+
+            except zmq.Again as e:  # type: ignore
+                # Handle the timeout when waiting for a message
+                logger.debug(
+                    "Timeout waiting for a message on the side channel: %s",
+                    str(e),
+                )
+                continue
+            except Exception as e:
+                logger.error("Failed to process receiver loop: %s", str(e))
+                if self._running:
+                    time.sleep(0.01)
+
     def __str__(self):
         return self.__class__.__name__
 
@@ -99,7 +301,6 @@ class LocalCPUBackend(StorageBackendInterface):
         """
         Synchronously put the MemoryObj into the local cpu backend.
         """
-
         with self.cpu_lock:
             if key in self.hot_cache:
                 old_memory_obj = self.hot_cache.pop(key)
@@ -129,9 +330,24 @@ class LocalCPUBackend(StorageBackendInterface):
         if not self.use_hot:
             return None
 
+        # NIXL PUSH START
+
         # TODO(Jiayi): optimize this with batching
+        metadatas = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
             self.submit_put_task(key, memory_obj)
+            metadatas.append(memory_obj.metadata)
+
+        if self._nixl_role == "sender":
+            # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
+            message = (keys, metadatas)
+            data = pickle.dumps(message)
+
+            print(f"XXX Send request")
+            self._side_channel.send(data)
+            print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
+            logger.debug("Sent the request with %d keys", len(keys))
+        # NIXL PUSH END
 
         return None
 
