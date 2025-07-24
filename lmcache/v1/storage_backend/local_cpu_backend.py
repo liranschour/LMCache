@@ -214,6 +214,7 @@ class LocalCPUBackend(StorageBackendInterface):
             self._transfers_thread = threading.Thread(
                 target=self._transfers_loop, daemon=True
             )
+            self._transfers_thread.start()
 
             # Start the receiver thread
             self._receiver_thread = threading.Thread(
@@ -227,7 +228,8 @@ class LocalCPUBackend(StorageBackendInterface):
     def _transfers_loop(self):
         while self._running:
             with self._transfers_lock:
-                for handle, event in self._transfers.items():
+                for handle, done in self._transfers.items():
+                    print(f"XXX iterate over {handle} {done}")
                     state = self._agent.check_xfer_state(handle)
                     if state == "ERR":
                         print("Transfer got to Error state.")
@@ -236,7 +238,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         print(f"XXX tranfer completed")
                         self._agent.release_xfer_handle(handle)
                         self._active_transfers.pop(handle, None)
-                        event.set()
+                        done.set()
 
             time.sleep(0.001)  # Avoid busy waiting
 
@@ -245,12 +247,15 @@ class LocalCPUBackend(StorageBackendInterface):
             self._transfers[handle] = threading.Event()
 
     def wait_for_transfer(self, handle):
+        print(f"XXX wait for transfer before lock")
         with self._transfers_lock:
             t_done = self._transfers.pop(handle)
 
         if t_done:
             print(f"XXX wait for transfer to complete")
             t_done.wait()
+
+        print(f"XXX transfer completed")
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
