@@ -161,7 +161,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # Register local/src descr for NIXL xfer.
         assert mem_size % self._nixl_block_size == 0
-        self.src_xfer_side_handle = self.create_xfer_descs(mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
+        self.src_xfer_side_handle = self.create_xfer_descs("NIXL_INIT_AGENT", mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
@@ -252,7 +252,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     )
                     self.peer_name = self._agent.add_remote_agent(sender_meta).decode("utf-8")
 
-                    self.dst_xfer_side_handle = self.create_xfer_descs(sender_mem_base_addr, sender_num_blocks, sender_block_size)
+                    self.dst_xfer_side_handle = self.create_xfer_descs(self.peer_name, sender_mem_base_addr, sender_num_blocks, sender_block_size)
 
                     self._side_channel.send_multipart([sender_id, local_meta])
                     print(f"XXX RECEIVER end handshake")
@@ -296,7 +296,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 if self._running:
                     time.sleep(0.01)
 
-    def create_xfer_descs(self, base_addr, num_blocks, block_size):
+    def create_xfer_descs(self, agent_name, base_addr, num_blocks, block_size):
         blocks_data = []
 
         for block_id in range(num_blocks):
@@ -305,9 +305,9 @@ class LocalCPUBackend(StorageBackendInterface):
             blocks_data.append((addr, block_size, 0))
 
         descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
-        print(f"XXX Created src handles len={len(blocks_data)}")
+        print(f"XXX Created xfr handles len={len(blocks_data)}")
 
-        return self._agent.prep_xfer_dlist("NIXL_INIT_AGENT", descs)
+        return self._agent.prep_xfer_dlist(agent_name, descs)
 
     def __str__(self):
         return self.__class__.__name__
