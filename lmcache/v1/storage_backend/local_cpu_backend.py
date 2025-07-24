@@ -230,7 +230,7 @@ class LocalCPUBackend(StorageBackendInterface):
         n = 0
         while self._running:
             n += 1
-            if i % 1000 == 0:
+            if n % 1000 == 0:
                 print(f"XXX in loop")
 
             with self._transfers_lock:
