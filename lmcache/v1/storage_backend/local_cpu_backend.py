@@ -226,6 +226,7 @@ class LocalCPUBackend(StorageBackendInterface):
         # NIXL_PUSH_END
 
     def _transfers_loop(self):
+        print(f"XXX _transfer_loop")
         n = 0
         while self._running:
             n += 1
@@ -233,6 +234,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 print(f"XXX in loop")
 
             with self._transfers_lock:
+                print(f"XXX _transfer_loop AA")
                 for handle, done in self._transfers.items():
                     print(f"XXX iterate over {handle} {done}")
                     state = self._agent.check_xfer_state(handle)
@@ -246,6 +248,8 @@ class LocalCPUBackend(StorageBackendInterface):
                         done.set()
 
             time.sleep(0.001)  # Avoid busy waiting
+
+        print(f"XXX _transfer_loop")
 
     def insert_transfer(self, handle):
         with self._transfers_lock:
@@ -359,7 +363,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 self.insert_transfer(handle)
 
+                print(f"XXX before wait")
                 self.wait_for_transfer(handle)
+                print(f"XXX after")
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
