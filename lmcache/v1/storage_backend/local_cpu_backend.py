@@ -253,6 +253,7 @@ class LocalCPUBackend(StorageBackendInterface):
     def insert_transfer(self, handle):
         with self._transfers_lock:
             self._transfers[handle] = threading.Event()
+            print(f"XXX inserted {len(self._transfers)}")
 
     def wait_for_transfer(self, handle):
         print(f"XXX wait for transfer before lock")
