@@ -160,6 +160,7 @@ class LocalCPUBackend(StorageBackendInterface):
         print(f"XXX register descs= {local_mem} {mem_base_addr} : {mem_size}")
 
         # Register local/src descr for NIXL xfer.
+        assert mem_size % self._nixl_block_size == 0
         self.src_xfer_side_handle = self.create_xfer_descs(mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
 
         if config.nixl_role == "sender":
@@ -265,6 +266,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 memory_objs = []
                 for key, meta in zip(keys, metadatas, strict=False):
+                    print(f"XXXYYYYYY meta adddress = {meta.address}")
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
 
@@ -296,7 +298,6 @@ class LocalCPUBackend(StorageBackendInterface):
 
     def create_xfer_descs(self, base_addr, num_blocks, block_size):
         blocks_data = []
-        assert mem_size % self._nixl_block_size == 0
 
         for block_id in range(num_blocks):
             block_offset = block_id * block_size
