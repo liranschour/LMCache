@@ -257,12 +257,17 @@ class LocalCPUBackend(StorageBackendInterface):
 
     def wait_for_transfer(self, handle):
         print(f"XXX wait for transfer before lock")
+        t_done = None
         with self._transfers_lock:
-            t_done = self._transfers.pop(handle, None)
+            if handle in self._transfers:
+                t_done = self._transfers[handle]
 
         if t_done:
             print(f"XXX wait for transfer to complete")
             t_done.wait()
+            print(f"XXX completed")
+            with self._transfers_lock:
+                self._transfers.pop(handle)
 
         print(f"XXX transfer completed")
 
