@@ -160,19 +160,7 @@ class LocalCPUBackend(StorageBackendInterface):
         print(f"XXX register descs= {local_mem} {mem_base_addr} : {mem_size}")
 
         # Register local/src descr for NIXL xfer.
-        blocks_data = []
-        assert mem_size % self._nixl_block_size == 0
-        num_blocks = mem_size // self._nixl_block_size
-        base_addr = mem_base_addr
-        for block_id in range(num_blocks):
-                block_offset = block_id * self._nixl_block_size
-                addr = base_addr + block_offset
-                blocks_data.append((addr, self._nixl_block_size, 0))
-
-        descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
-        self.src_xfer_side_handle = self._agent.prep_xfer_dlist(
-            "NIXL_INIT_AGENT", descs)
-        print(f"XXX Created src handles len={len(blocks_data)}")
+        self.src_xfer_side_handle = self.create_xfer_descs(mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
@@ -262,6 +250,9 @@ class LocalCPUBackend(StorageBackendInterface):
                         "The sender_meta should be provided on the receiver side"
                     )
                     self.peer_name = self._agent.add_remote_agent(sender_meta).decode("utf-8")
+
+                    self.dst_xfer_side_handle = self.create_xfer_descs(sender_mem_base_addr, sender_num_blocks, sender_block_size)
+
                     self._side_channel.send_multipart([sender_id, local_meta])
                     print(f"XXX RECEIVER end handshake")
                     logger.info(f"New sender connected with ID: {sender_id.decode()}")
@@ -302,6 +293,20 @@ class LocalCPUBackend(StorageBackendInterface):
                 logger.error("Failed to process receiver loop: %s", str(e))
                 if self._running:
                     time.sleep(0.01)
+
+    def create_xfer_descs(base_addr, num_blocks, block_size):
+        blocks_data = []
+        assert mem_size % self._nixl_block_size == 0
+
+        for block_id in range(num_blocks):
+            block_offset = block_id * block_size
+            addr = base_addr + block_offset
+            blocks_data.append((addr, block_size, 0))
+
+        descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
+        print(f"XXX Created src handles len={len(blocks_data)}")
+
+        return self._agent.prep_xfer_dlist("NIXL_INIT_AGENT", descs)
 
     def __str__(self):
         return self.__class__.__name__
