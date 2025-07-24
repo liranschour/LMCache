@@ -299,7 +299,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 start = time.perf_counter()
                 self._agent.transfer(handle)
                 end = time.perf_counter()
-                logger.info("========== TRANSFER: %s ========== of %d blocks %d block size = %d", end - start, len(local_block_descs_ids), self.block_len, self.block_len * len(local_block_descs_ids))
+                logger.info("========== TRANSFER: %s ========== of %d blocks %d block size = %d", end - start, len(local_descs_ids), self._nixl_block_size, self._nixl_block_size * len(local_descs_ids))
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
