@@ -161,7 +161,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # Register local/src descr for NIXL xfer.
         blocks_data = []
-        num_blocks = mem_size / self._nixl_block_size
+        assert mem_size % self._nixl_block_size == 0
+        num_blocks = mem_size // self._nixl_block_size
         base_addr = mem_base_addr
         for block_id in range(num_blocks):
                 block_offset = block_id * self._nixl_block_size
