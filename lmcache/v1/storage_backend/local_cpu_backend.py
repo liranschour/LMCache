@@ -154,7 +154,14 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # Nixl register memory
         mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
-        print(f"XXX {mem_base_addr} : {mem_size}")
+        local_mem = [(mem_base_addr, mem_size, 0, "")]
+        descs = self._agent.get_reg_descs(local_mem, "DRAM")
+        self._agent.register_memory(descs)
+        print(f"XXX register descs= {local_mem} {mem_base_addr} : {mem_size}")
+
+        # Register local/src descr for NIXL xfer.
+        assert mem_size % self._nixl_block_size == 0
+        self.src_xfer_side_handle = self.create_xfer_descs("NIXL_INIT_AGENT", mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
@@ -173,7 +180,11 @@ class LocalCPUBackend(StorageBackendInterface):
             worker_id = 0 # HACK for now
             self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
-            self._side_channel.send(local_meta)
+
+            message = (local_meta, mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
+            data = pickle.dumps(message)
+
+            self._side_channel.send(data)
             remote_meta = self._side_channel.recv()
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
 
@@ -196,8 +207,16 @@ class LocalCPUBackend(StorageBackendInterface):
                 5000,  # Set a timeout for receiving to avoid blocking
             )
 
-            # Start the receiver thread
             self._running = True
+            # Start Nixl competion thread
+            self._transfers = {}
+            self._transfers_lock = threading.Lock()
+            self._transfers_thread = threading.Thread(
+                target=self._transfers_loop, daemon=True
+            )
+            self._transfers_thread.start()
+
+            # Start the receiver thread
             self._receiver_thread = threading.Thread(
                 target=self._receiver_loop, daemon=True
             )
@@ -205,6 +224,40 @@ class LocalCPUBackend(StorageBackendInterface):
             self._receiver_thread.start()
 
         # NIXL_PUSH_END
+
+    def _transfers_loop(self):
+        while self._running:
+
+            remove_handles = []
+            with self._transfers_lock:
+                for handle, t_done in self._transfers.items():
+                    state = self._agent.check_xfer_state(handle)
+                    if state == "ERR":
+                        print("Transfer got to Error state.")
+                        exit()
+                    elif state == "DONE":
+                        self._agent.release_xfer_handle(handle)
+                        t_done.set()
+                        remove_handles.append(handle)
+
+                for handle in remove_handles:
+                    assert handle in self._transfers
+                    del self._transfers[handle]
+
+            time.sleep(0.001)  # Avoid busy waiting
+
+    def insert_transfer(self, handle):
+        with self._transfers_lock:
+            self._transfers[handle] = threading.Event()
+
+    def wait_for_transfer(self, handle):
+        t_done = None
+        with self._transfers_lock:
+            if handle in self._transfers:
+                t_done = self._transfers[handle]
+
+        if t_done:
+            t_done.wait()
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
@@ -230,13 +283,19 @@ class LocalCPUBackend(StorageBackendInterface):
                 # New sender connection
                 if not self._sender_id:
                     self._sender_id  = sender_id  # HACK single sender for now
-                    sender_meta = msg
+                    sender_meta, sender_mem_base_addr, sender_num_blocks, sender_block_size = pickle.loads(msg)
+                    assert self._nixl_block_size == sender_block_size
+                    #sender_meta = pickle.loads(msg)
+                    #sender_meta = msg
                     # Now, msg should be the sender metadata
                     # Initialize a new pipe for this sender
                     assert sender_meta is not None, (
                         "The sender_meta should be provided on the receiver side"
                     )
                     self.peer_name = self._agent.add_remote_agent(sender_meta).decode("utf-8")
+
+                    self.dst_xfer_side_handle = self.create_xfer_descs(self.peer_name, sender_mem_base_addr, sender_num_blocks, sender_block_size)
+
                     self._side_channel.send_multipart([sender_id, local_meta])
                     print(f"XXX RECEIVER end handshake")
                     logger.info(f"New sender connected with ID: {sender_id.decode()}")
@@ -245,17 +304,61 @@ class LocalCPUBackend(StorageBackendInterface):
                 #request = NixlRequest.deserialize(msg)
 
                 keys, metadatas = pickle.loads(msg)
-                print(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                logger.debug(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 memory_objs = []
+                local_descs_ids = []
+                remote_descs_ids = []
                 for key, meta in zip(keys, metadatas, strict=False):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
 
-                print(f"XXXX Need to READ data to allocated {memory_objs}")
+                    assert meta.phy_size % self._nixl_block_size == 0
+                    num_blocks = meta.phy_size // self._nixl_block_size
+                    assert mem_obj.metadata.address % self._nixl_block_size == 0
+                    local_base_block_id = mem_obj.metadata.address // self._nixl_block_size
+                    remote_base_block_id = meta.address // self._nixl_block_size
+
+                    for block_id in range(num_blocks):
+                        local_descs_ids.append(local_base_block_id + block_id)
+                        remote_descs_ids.append(remote_base_block_id + block_id)
+
+
+                # Prepare transfer with Nixl.
+                handle = self._agent.make_prepped_xfer(
+                    "READ",
+                    self.src_xfer_side_handle,
+                    local_descs_ids,
+                    self.dst_xfer_side_handle,
+                    remote_descs_ids,
+                    notif_msg="XXX",
+                    skip_desc_merge=False,  # XXX need to check this
+                )
+
+                self.insert_transfer(handle)
+
+                # Begin async xfer.
+                start = time.perf_counter()
+                self._agent.transfer(handle)
+
+                # while True:
+                #     state = self._agent.check_xfer_state(handle)
+                #     if state == "ERR":
+                #         print("Transfer got to Error state.")
+                #         exit()
+                #     elif state == "DONE":
+                #         break
+
+                # print(f"XXX tranfer completed")
+                # self._agent.release_xfer_handle(handle)
+                # self._active_transfers.pop(handle, None)
+
+                self.wait_for_transfer(handle)
+
+                end = time.perf_counter()
+                logger.info(f"========== TRANSFER completed in {end - start} {(len(local_descs_ids) * self._nixl_block_size)/((end - start) * (1 << 30)):.3f} GB/s")
 
                 self.batched_submit_put_task(keys, memory_objs)
-                print(f"XXX Submitted to cache")
 
                 for memory_obj in memory_objs:
                     memory_obj.ref_count_down()
@@ -277,6 +380,18 @@ class LocalCPUBackend(StorageBackendInterface):
                 logger.error("Failed to process receiver loop: %s", str(e))
                 if self._running:
                     time.sleep(0.01)
+
+    def create_xfer_descs(self, agent_name, base_addr, num_blocks, block_size):
+        blocks_data = []
+
+        for block_id in range(num_blocks):
+            block_offset = block_id * block_size
+            addr = base_addr + block_offset
+            blocks_data.append((addr, block_size, 0))
+
+        descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
+
+        return self._agent.prep_xfer_dlist(agent_name, descs)
 
     def __str__(self):
         return self.__class__.__name__
@@ -343,10 +458,16 @@ class LocalCPUBackend(StorageBackendInterface):
             message = (keys, metadatas)
             data = pickle.dumps(message)
 
-            print(f"XXX Send request")
             self._side_channel.send(data)
-            print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
-            logger.debug("Sent the request with %d keys", len(keys))
+            logger.info("Sent the request with %d keys and waiting for ack by notif", len(keys))
+
+            notifs = self._agent.get_new_notifs()
+
+            while len(notifs) == 0:
+                notifs = self._agent.get_new_notifs()
+
+            assert len(notifs) == 1, f"notifs len error = {len(notifs)}"
+
         # NIXL PUSH END
 
         return None
@@ -455,7 +576,6 @@ class LocalCPUBackend(StorageBackendInterface):
             return memory_obj
 
         assert isinstance(self.memory_allocator, MixedMemoryAllocator)
-
         evict_keys = []
         with self.cpu_lock:
             for evict_key in self.hot_cache:
@@ -469,9 +589,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 old_mem_obj.ref_count_down()
                 memory_obj = self.memory_allocator.allocate(shape, dtype, fmt)
-                logger.debug("Evicting 1 chunk from cpu memory")
                 if memory_obj is not None:
                     break
+
         for evict_key in evict_keys:
             # already freed above in order to allocate new memory object
             # this is to remove the key from the hot cache
