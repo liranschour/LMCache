@@ -294,7 +294,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 if self._running:
                     time.sleep(0.01)
 
-    def create_xfer_descs(base_addr, num_blocks, block_size):
+    def create_xfer_descs(self, base_addr, num_blocks, block_size):
         blocks_data = []
         assert mem_size % self._nixl_block_size == 0
 
