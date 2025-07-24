@@ -171,7 +171,7 @@ class LocalCPUBackend(StorageBackendInterface):
         descs = self.nixl_wrapper.get_xfer_descs(blocks_data, "DRAM")
         self.src_xfer_side_handle = self.nixl_wrapper.prep_xfer_dlist(
             "NIXL_INIT_AGENT", descs)
-        print(f"XXX Created src handles len={len(self.src_xfer_side_handle}")
+        print(f"XXX Created src handles len={len(self.src_xfer_side_handle)}")
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
@@ -190,7 +190,11 @@ class LocalCPUBackend(StorageBackendInterface):
             worker_id = 0 # HACK for now
             self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
-            self._side_channel.send(local_meta)
+
+            message = (local_meta)
+            data = pickle.dumps(message)
+
+            self._side_channel.send(data)
             remote_meta = self._side_channel.recv()
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
 
@@ -247,7 +251,8 @@ class LocalCPUBackend(StorageBackendInterface):
                 # New sender connection
                 if not self._sender_id:
                     self._sender_id  = sender_id  # HACK single sender for now
-                    sender_meta = msg
+                    sender_meta = pickle.loads(msg)
+                    #sender_meta = msg
                     # Now, msg should be the sender metadata
                     # Initialize a new pipe for this sender
                     assert sender_meta is not None, (
