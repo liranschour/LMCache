@@ -170,7 +170,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 blocks_data.append((addr, self._nixl_block_size, 0))
 
         descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
-        self.src_xfer_side_handle = self.nixl_wrapper.prep_xfer_dlist(
+        self.src_xfer_side_handle = self._agent.prep_xfer_dlist(
             "NIXL_INIT_AGENT", descs)
         print(f"XXX Created src handles len={len(self.src_xfer_side_handle)}")
 
