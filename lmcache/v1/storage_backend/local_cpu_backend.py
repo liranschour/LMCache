@@ -154,7 +154,11 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # Nixl register memory
         mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
-        print(f"XXX {mem_base_addr} : {mem_size}")
+        local_mem = [(mem_base_addr, mem_size, 0, "")]
+        descs = self._agent.get_reg_descs(local_mem, "DRAM")
+
+        self._agent.register_memory(descs)
+        print(f"XXX register descs= {local_mem} {mem_base_addr} : {mem_size}")
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
