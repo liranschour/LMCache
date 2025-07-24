@@ -300,6 +300,15 @@ class LocalCPUBackend(StorageBackendInterface):
                 self._agent.transfer(handle)
                 end = time.perf_counter()
                 logger.info("========== TRANSFER: %s ========== of %d blocks %d block size = %d", end - start, len(local_descs_ids), self._nixl_block_size, self._nixl_block_size * len(local_descs_ids))
+                while True:
+                    state = self._agent.check_xfer_state(handle)
+                    if state == "ERR":
+                        print("Transfer got to Error state.")
+                        exit()
+                    elif state == "DONE":
+                        break
+
+                print(f"XXX tranfer completed")
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
