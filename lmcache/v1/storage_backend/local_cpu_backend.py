@@ -238,6 +238,10 @@ class LocalCPUBackend(StorageBackendInterface):
                         self._active_transfers.pop(handle, None)
                         event.set()
 
+    def insert_transfer(self, handle):
+        with self._transfers_lock:
+            self._transfers[handle] = threading.Event()
+
     def wait_for_transfer(self, handle):
         with self._transfers_lock:
             t_done = self._transfers.pop(handle)
@@ -324,8 +328,6 @@ class LocalCPUBackend(StorageBackendInterface):
                     skip_desc_merge=False,  # XXX need to check this
                 )
 
-                self._active_transfers[handle] = True
-
                 # Begin async xfer.
                 start = time.perf_counter()
                 self._agent.transfer(handle)
@@ -343,8 +345,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 # self._agent.release_xfer_handle(handle)
                 # self._active_transfers.pop(handle, None)
 
-                with self._transfers_lock:
-                    self._transfers[handle] = threading.Event()
+                self.insert_transfer(handle)
 
                 self.wait_for_transfer(handle)
 
