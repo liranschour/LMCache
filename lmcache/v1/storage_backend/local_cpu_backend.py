@@ -226,7 +226,12 @@ class LocalCPUBackend(StorageBackendInterface):
         # NIXL_PUSH_END
 
     def _transfers_loop(self):
+        n = 0
         while self._running:
+            n += 1
+            if i % 1000 == 0:
+                print(f"XXX in loop")
+
             with self._transfers_lock:
                 for handle, done in self._transfers.items():
                     print(f"XXX iterate over {handle} {done}")
