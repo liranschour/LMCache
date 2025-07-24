@@ -209,6 +209,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
             # Start the receiver thread
             self._running = True
+            self._active_transfers = {}
             self._receiver_thread = threading.Thread(
                 target=self._receiver_loop, daemon=True
             )
@@ -295,6 +296,8 @@ class LocalCPUBackend(StorageBackendInterface):
                     skip_desc_merge=False,  # XXX need to check this
                 )
 
+                self._active_transfers[handle] = True
+
                 # Begin async xfer.
                 start = time.perf_counter()
                 self._agent.transfer(handle)
@@ -310,6 +313,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 print(f"XXX tranfer completed")
                 self._agent.release_xfer_handle(handle)
+                self._active_transfers.pop(handle, None)
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
