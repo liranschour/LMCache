@@ -172,7 +172,7 @@ class LocalCPUBackend(StorageBackendInterface):
         descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
         self.src_xfer_side_handle = self._agent.prep_xfer_dlist(
             "NIXL_INIT_AGENT", descs)
-        print(f"XXX Created src handles len={len(self.src_xfer_side_handle)}")
+        print(f"XXX Created src handles len={len(descs)}")
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
@@ -192,7 +192,7 @@ class LocalCPUBackend(StorageBackendInterface):
             self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
 
-            message = (local_meta)
+            message = (local_meta) #, mem_base_addr, num_blocks, self._nixl_block_size)
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
