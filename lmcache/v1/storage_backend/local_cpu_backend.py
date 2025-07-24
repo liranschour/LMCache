@@ -234,8 +234,8 @@ class LocalCPUBackend(StorageBackendInterface):
                 print(f"XXX in loop len transfers = {len(self._transfers)}")
 
             with self._transfers_lock:
-                for handle, done in self._transfers.items():
-                    print(f"XXX iterate over {handle} {done}")
+                for handle, t_done in self._transfers.items():
+                    print(f"XXX iterate over {handle} {t_done}")
                     state = self._agent.check_xfer_state(handle)
                     if state == "ERR":
                         print("Transfer got to Error state.")
@@ -244,7 +244,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         print(f"XXX tranfer completed")
                         self._agent.release_xfer_handle(handle)
                         self._active_transfers.pop(handle, None)
-                        done.set()
+                        t_done.set()
 
             time.sleep(0.001)  # Avoid busy waiting
 
@@ -258,7 +258,7 @@ class LocalCPUBackend(StorageBackendInterface):
     def wait_for_transfer(self, handle):
         print(f"XXX wait for transfer before lock")
         with self._transfers_lock:
-            t_done = self._transfers.pop(handle)
+            t_done = self._transfers.pop(handle, None)
 
         if t_done:
             print(f"XXX wait for transfer to complete")
