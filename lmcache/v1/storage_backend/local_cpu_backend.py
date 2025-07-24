@@ -292,7 +292,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     self.dst_xfer_side_handle,
                     remote_descs_ids,
                     notif_msg="XXX",
-                    skip_desc_merge=True,  # XXX nered to check this
+                    skip_desc_merge=False,  # XXX need to check this
                 )
 
                 # Begin async xfer.
@@ -309,6 +309,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         break
 
                 print(f"XXX tranfer completed")
+                self._agent.release_xfer_handle(handle)
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
