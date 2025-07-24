@@ -265,12 +265,41 @@ class LocalCPUBackend(StorageBackendInterface):
                 print(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 memory_objs = []
+                local_descs_ids = []
+                remote_descs_ids = []
                 for key, meta in zip(keys, metadatas, strict=False):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
-                    print(f"XXXYYYYYY meta remote adddress = {meta.address} local address {mem_obj.metadata.address}")
 
-                print(f"XXXX Need to READ data to allocated {memory_objs}")
+                    print(f"XXXYYYYYY meta remote adddress = {meta.address} local address {mem_obj.metadata.address}")
+                    assert meta.phy_size % self._nixl_block_size == 0
+                    num_blocks = meta.phy_size // self._nixl_block_size
+                    assert mem_obj.metadata.address % self._nixl_block_size == 0
+                    local_base_block_id = mem_obj.metadata.address // self._nixl_block_size
+                    remote_base_block_id = meta.address // self._nixl_block_size
+
+                    for block_id in range(num_blocks):
+                        local_descs_ids.append(local_base_block_id + block_id)
+                        remote_descs_ids.append(remote_base_block_id + block_id)
+
+                print(f"XXXX READ data to allocated {memory_objs}")
+
+                # Prepare transfer with Nixl.
+                handle = self._agent.make_prepped_xfer(
+                    "READ",
+                    self.local_xfer_side_handle,
+                    local_descs_ids,
+                    self.dst_xfer_side_handle,
+                    remote_descs_ids,
+                    notif_msg="XXX",
+                    skip_desc_merge=True,  # XXX nered to check this
+                )
+
+                # Begin async xfer.
+                start = time.perf_counter()
+                self._agent.transfer(handle)
+                end = time.perf_counter()
+                logger.info("========== TRANSFER: %s ========== of %d blocks %d block size = %d", end - start, len(local_block_descs_ids), self.block_len, self.block_len * len(local_block_descs_ids))
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
