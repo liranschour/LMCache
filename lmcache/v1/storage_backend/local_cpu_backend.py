@@ -207,9 +207,15 @@ class LocalCPUBackend(StorageBackendInterface):
                 5000,  # Set a timeout for receiving to avoid blocking
             )
 
-            # Start the receiver thread
             self._running = True
-            self._active_transfers = {}
+            # Start Nixl competion thread
+            self._transfers = {}
+            self._transfers_lock = threading.Lock()
+            self._transfers_thread = threading.Thread(
+                target=self._transfers_loop, daemon=True
+            )
+
+            # Start the receiver thread
             self._receiver_thread = threading.Thread(
                 target=self._receiver_loop, daemon=True
             )
@@ -217,6 +223,28 @@ class LocalCPUBackend(StorageBackendInterface):
             self._receiver_thread.start()
 
         # NIXL_PUSH_END
+
+    def _transfers_loop(self):
+        while self._running:
+            with self._transfers_lock:
+                for handle, event in self._transfers.items():
+                    state = self._agent.check_xfer_state(handle)
+                    if state == "ERR":
+                        print("Transfer got to Error state.")
+                        exit()
+                    elif state == "DONE":
+                        print(f"XXX tranfer completed")
+                        self._agent.release_xfer_handle(handle)
+                        self._active_transfers.pop(handle, None)
+                        event.set()
+
+    def wait_for_transfer(self, handle):
+        with self._transfers_lock:
+            t_done = self._transfers.pop(handle)
+
+        if t_done:
+            print(f"XXX wait for transfer to complete")
+            t_tone.wait()
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
@@ -303,17 +331,22 @@ class LocalCPUBackend(StorageBackendInterface):
                 self._agent.transfer(handle)
                 end = time.perf_counter()
                 logger.info("========== TRANSFER: %s ========== of %d blocks %d block size = %d", end - start, len(local_descs_ids), self._nixl_block_size, self._nixl_block_size * len(local_descs_ids))
-                while True:
-                    state = self._agent.check_xfer_state(handle)
-                    if state == "ERR":
-                        print("Transfer got to Error state.")
-                        exit()
-                    elif state == "DONE":
-                        break
+                # while True:
+                #     state = self._agent.check_xfer_state(handle)
+                #     if state == "ERR":
+                #         print("Transfer got to Error state.")
+                #         exit()
+                #     elif state == "DONE":
+                #         break
 
-                print(f"XXX tranfer completed")
-                self._agent.release_xfer_handle(handle)
-                self._active_transfers.pop(handle, None)
+                # print(f"XXX tranfer completed")
+                # self._agent.release_xfer_handle(handle)
+                # self._active_transfers.pop(handle, None)
+
+                with self._transfers_lock:
+                    self._transfers[handle] = threading.Event()
+
+                self.wait_for_transfer(handle)
 
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
