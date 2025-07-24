@@ -238,6 +238,8 @@ class LocalCPUBackend(StorageBackendInterface):
                         self._active_transfers.pop(handle, None)
                         event.set()
 
+            time.sleep(0.001)  # Avoid busy waiting
+
     def insert_transfer(self, handle):
         with self._transfers_lock:
             self._transfers[handle] = threading.Event()
@@ -248,7 +250,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if t_done:
             print(f"XXX wait for transfer to complete")
-            t_tone.wait()
+            t_done.wait()
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
