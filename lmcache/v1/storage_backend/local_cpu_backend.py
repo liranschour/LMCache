@@ -287,7 +287,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 # Prepare transfer with Nixl.
                 handle = self._agent.make_prepped_xfer(
                     "READ",
-                    self.local_xfer_side_handle,
+                    self.src_xfer_side_handle,
                     local_descs_ids,
                     self.dst_xfer_side_handle,
                     remote_descs_ids,
