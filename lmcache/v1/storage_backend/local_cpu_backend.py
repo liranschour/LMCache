@@ -231,10 +231,9 @@ class LocalCPUBackend(StorageBackendInterface):
         while self._running:
             n += 1
             if n % 1000 == 0:
-                print(f"XXX in loop")
+                print(f"XXX in loop len transfers = {len(self._transfers)}")
 
             with self._transfers_lock:
-                print(f"XXX _transfer_loop AA")
                 for handle, done in self._transfers.items():
                     print(f"XXX iterate over {handle} {done}")
                     state = self._agent.check_xfer_state(handle)
