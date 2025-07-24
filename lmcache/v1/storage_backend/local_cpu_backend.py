@@ -243,7 +243,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     elif state == "DONE":
                         print(f"XXX tranfer completed")
                         self._agent.release_xfer_handle(handle)
-                        self._active_transfers.pop(handle, None)
+                        self._transfers.pop(handle, None)
                         t_done.set()
 
             time.sleep(0.001)  # Avoid busy waiting
@@ -344,6 +344,8 @@ class LocalCPUBackend(StorageBackendInterface):
                     skip_desc_merge=False,  # XXX need to check this
                 )
 
+                self.insert_transfer(handle)
+
                 # Begin async xfer.
                 start = time.perf_counter()
                 self._agent.transfer(handle)
@@ -360,8 +362,6 @@ class LocalCPUBackend(StorageBackendInterface):
                 # print(f"XXX tranfer completed")
                 # self._agent.release_xfer_handle(handle)
                 # self._active_transfers.pop(handle, None)
-
-                self.insert_transfer(handle)
 
                 print(f"XXX before wait")
                 self.wait_for_transfer(handle)
