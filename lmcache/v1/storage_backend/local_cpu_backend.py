@@ -156,9 +156,22 @@ class LocalCPUBackend(StorageBackendInterface):
         mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
         local_mem = [(mem_base_addr, mem_size, 0, "")]
         descs = self._agent.get_reg_descs(local_mem, "DRAM")
-
         self._agent.register_memory(descs)
         print(f"XXX register descs= {local_mem} {mem_base_addr} : {mem_size}")
+
+        # Register local/src descr for NIXL xfer.
+        blocks_data = []
+        num_blocks = mem_size / self._nixl_block_size
+        base_addr = mem_base_addr
+        for block_id in range(num_blocks):
+                block_offset = block_id * self._nixl_block_size
+                addr = base_addr + block_offset
+                blocks_data.append((addr, self.block_len, 0))
+
+        descs = self.nixl_wrapper.get_xfer_descs(blocks_data, "DRAM")
+        self.src_xfer_side_handle = self.nixl_wrapper.prep_xfer_dlist(
+            "NIXL_INIT_AGENT", descs)
+        print(f"XXX Created src handles len={len(self.src_xfer_side_handle}")
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
