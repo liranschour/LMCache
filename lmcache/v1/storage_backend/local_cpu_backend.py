@@ -181,7 +181,7 @@ class LocalCPUBackend(StorageBackendInterface):
             self._side_channel.connect("tcp://{}:{}".format(config.nixl_receiver_host, config.nixl_receiver_port + worker_id))
             self._side_channel.setsockopt(zmq.LINGER, 0)  # type: ignore
 
-            message = (local_meta, mem_base_addr, num_blocks, self._nixl_block_size)
+            message = (local_meta, mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
@@ -266,9 +266,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 memory_objs = []
                 for key, meta in zip(keys, metadatas, strict=False):
-                    print(f"XXXYYYYYY meta adddress = {meta.address}")
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
+                    print(f"XXXYYYYYY meta remote adddress = {meta.address} local address {mem_obj.metadata.address}")
 
                 print(f"XXXX Need to READ data to allocated {memory_objs}")
 
