@@ -356,7 +356,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 self.wait_for_transfer(handle)
 
                 end = time.perf_counter()
-                logger.info(f"========== TRANSFER completed in {end - start} {((len(local_descs_ids) * self._nixl_block_size) * 8)/end - start} Gb/s")
+                logger.info(f"========== TRANSFER completed in {end - start} {((len(local_descs_ids) * self._nixl_block_size) * 8)/(end - start)} Gb/s")
 
                 self.batched_submit_put_task(keys, memory_objs)
 

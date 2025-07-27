@@ -651,7 +651,7 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
                     size=block.size - aligned_size,
                 )
             )
-        print(f"XXX allocate shape = {shape} type={dtype} block.start={block.start} aligned_size={aligned_size}")
+
         size_in_bytes = torch.tensor([], dtype=dtype).element_size() * torch.tensor(shape).prod().item()
 
         # TODO (Jiayi): need a flag to drop these debug ops
