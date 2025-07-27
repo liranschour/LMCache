@@ -227,16 +227,12 @@ class LocalCPUBackend(StorageBackendInterface):
 
     def _transfers_loop(self):
         print(f"XXX _transfer_loop")
-        n = 0
+
         while self._running:
-            n += 1
-            if n % 1000 == 0:
-                print(f"XXX in loop len transfers = {len(self._transfers)}")
 
             remove_handles = []
             with self._transfers_lock:
                 for handle, t_done in self._transfers.items():
-                    print(f"XXX iterate over {handle} {t_done}")
                     state = self._agent.check_xfer_state(handle)
                     if state == "ERR":
                         print("Transfer got to Error state.")
