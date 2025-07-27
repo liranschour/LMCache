@@ -449,7 +449,7 @@ class LocalCPUBackend(StorageBackendInterface):
             return None
 
         # NIXL PUSH START
-
+        print(f"XXX put keys {len(keys)}")
         # TODO(Jiayi): optimize this with batching
         metadatas = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
