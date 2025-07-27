@@ -233,6 +233,7 @@ class LocalCPUBackend(StorageBackendInterface):
             if n % 1000 == 0:
                 print(f"XXX in loop len transfers = {len(self._transfers)}")
 
+            remove_handles = []
             with self._transfers_lock:
                 for handle, t_done in self._transfers.items():
                     print(f"XXX iterate over {handle} {t_done}")
@@ -243,8 +244,13 @@ class LocalCPUBackend(StorageBackendInterface):
                     elif state == "DONE":
                         print(f"XXX tranfer completed")
                         self._agent.release_xfer_handle(handle)
-                        self._transfers.pop(handle, None)
                         t_done.set()
+                        remove_handles.append(handle)
+
+                for handle in remove_handles:
+                    print(f"XXX delete {handle}")
+                    assert handle in self._transfers
+                    del self._transfers[handle]
 
             time.sleep(0.001)  # Avoid busy waiting
 
@@ -266,8 +272,6 @@ class LocalCPUBackend(StorageBackendInterface):
             print(f"XXX wait for transfer to complete")
             t_done.wait()
             print(f"XXX completed")
-            with self._transfers_lock:
-                self._transfers.pop(handle)
 
         print(f"XXX transfer completed")
 
