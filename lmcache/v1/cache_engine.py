@@ -196,7 +196,6 @@ class LMCacheEngine:
             num_tokens = end - start
             kv_shape = self.gpu_connector.get_shape(num_tokens)
             kv_dtype = self.metadata.kv_dtype
-
             memory_obj = self.storage_manager.allocate(kv_shape, kv_dtype)
             if memory_obj is None:
                 logger.warning(
@@ -739,7 +738,6 @@ class LMCacheEngineBuilder:
             configuration.
         """
         logger.info(f"Creating LMCacheEngine instance {instance_id}")
-
         if instance_id not in cls._instances:
             memory_allocator = cls._Create_memory_allocator(config, metadata)
             token_database = cls._Create_token_database(config, metadata)

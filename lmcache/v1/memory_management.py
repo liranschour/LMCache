@@ -652,7 +652,6 @@ class TensorMemoryAllocator(MemoryAllocatorInterface):
                 )
             )
 
-        size_in_bytes = torch.tensor([], dtype=dtype).element_size() * torch.tensor(shape).prod().item()
 
         # TODO (Jiayi): need a flag to drop these debug ops
         # Update debug status
@@ -909,7 +908,6 @@ class PagedTensorMemoryAllocator(MemoryAllocatorInterface):
             # NOTE: idx is the paged index
             # NOTE: the last unfull chunk's shape needs to be
             # adjusted during allocation.
-
             metadata = MemoryObjMetadata(
                 self.shape,
                 self.dtype,
