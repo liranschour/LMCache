@@ -372,8 +372,6 @@ class LocalCPUBackend(StorageBackendInterface):
                 self.wait_for_transfer(handle)
                 print(f"XXX after")
 
-                self._agent.send_notif(self.peer_name, b"DONE")
-
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
 
@@ -485,8 +483,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
             while len(notifs) == 0:
                 notifs = self._agent.get_new_notifs()
+                assert len(notifs) == 1
 
-            print(f"XXX got response {len(notifs)}")
+            print(f"XXX REMOVE ME got response {len(notifs)}")
 
         # NIXL PUSH END
 
