@@ -399,6 +399,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
     def contains(self, key: CacheEngineKey, pin: bool = False) -> bool:
         with self.cpu_lock:
+            print(f"XXXX contains: key = {key} {key not in self.hot_cache}")
             if key not in self.hot_cache:
                 return False
             if pin:
