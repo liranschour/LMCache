@@ -450,6 +450,7 @@ class LocalCPUBackend(StorageBackendInterface):
         # TODO(Jiayi): optimize this with batching
         metadatas = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
+            print(f"XXX {key}")
             self.submit_put_task(key, memory_obj)
             metadatas.append(memory_obj.metadata)
 
@@ -459,7 +460,7 @@ class LocalCPUBackend(StorageBackendInterface):
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
-            logger.debug("Sent the request with %d keys and waiting for ack by notif", len(keys))
+            logger.info("Sent the request with %d keys and waiting for ack by notif", len(keys))
 
             notifs = self._agent.get_new_notifs()
 
