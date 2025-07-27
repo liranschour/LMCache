@@ -226,8 +226,6 @@ class LocalCPUBackend(StorageBackendInterface):
         # NIXL_PUSH_END
 
     def _transfers_loop(self):
-        print(f"XXX _transfer_loop")
-
         while self._running:
 
             remove_handles = []
@@ -238,38 +236,28 @@ class LocalCPUBackend(StorageBackendInterface):
                         print("Transfer got to Error state.")
                         exit()
                     elif state == "DONE":
-                        print(f"XXX tranfer completed")
                         self._agent.release_xfer_handle(handle)
                         t_done.set()
                         remove_handles.append(handle)
 
                 for handle in remove_handles:
-                    print(f"XXX delete {handle}")
                     assert handle in self._transfers
                     del self._transfers[handle]
 
             time.sleep(0.001)  # Avoid busy waiting
 
-        print(f"XXX _transfer_loop")
-
     def insert_transfer(self, handle):
         with self._transfers_lock:
             self._transfers[handle] = threading.Event()
-            print(f"XXX inserted {len(self._transfers)}")
 
     def wait_for_transfer(self, handle):
-        print(f"XXX wait for transfer before lock")
         t_done = None
         with self._transfers_lock:
             if handle in self._transfers:
                 t_done = self._transfers[handle]
 
         if t_done:
-            print(f"XXX wait for transfer to complete")
             t_done.wait()
-            print(f"XXX completed")
-
-        print(f"XXX transfer completed")
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
@@ -325,7 +313,6 @@ class LocalCPUBackend(StorageBackendInterface):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
 
-                    print(f"XXXYYYYYY meta remote adddress = {meta.address} local address {mem_obj.metadata.address}")
                     assert meta.phy_size % self._nixl_block_size == 0
                     num_blocks = meta.phy_size // self._nixl_block_size
                     assert mem_obj.metadata.address % self._nixl_block_size == 0
@@ -336,7 +323,6 @@ class LocalCPUBackend(StorageBackendInterface):
                         local_descs_ids.append(local_base_block_id + block_id)
                         remote_descs_ids.append(remote_base_block_id + block_id)
 
-                print(f"XXXX READ data to allocated {memory_objs}")
 
                 # Prepare transfer with Nixl.
                 handle = self._agent.make_prepped_xfer(
@@ -354,8 +340,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 # Begin async xfer.
                 start = time.perf_counter()
                 self._agent.transfer(handle)
-                end = time.perf_counter()
-                logger.info("========== TRANSFER: %s ========== of %d blocks %d block size = %d", end - start, len(local_descs_ids), self._nixl_block_size, self._nixl_block_size * len(local_descs_ids))
+
                 # while True:
                 #     state = self._agent.check_xfer_state(handle)
                 #     if state == "ERR":
@@ -368,12 +353,12 @@ class LocalCPUBackend(StorageBackendInterface):
                 # self._agent.release_xfer_handle(handle)
                 # self._active_transfers.pop(handle, None)
 
-                print(f"XXX before wait")
                 self.wait_for_transfer(handle)
-                print(f"XXX after")
+
+                end = time.perf_counter()
+                logger.info(f"========== TRANSFER completed in {end - start} {((len(local_descs_ids) * self._nixl_block_size) * 8)/end - start} Gb/s")
 
                 self.batched_submit_put_task(keys, memory_objs)
-                print(f"XXX Submitted to cache")
 
                 for memory_obj in memory_objs:
                     memory_obj.ref_count_down()
@@ -405,7 +390,6 @@ class LocalCPUBackend(StorageBackendInterface):
             blocks_data.append((addr, block_size, 0))
 
         descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
-        print(f"XXX Created xfr handles len={len(blocks_data)}")
 
         return self._agent.prep_xfer_dlist(agent_name, descs)
 
@@ -474,9 +458,7 @@ class LocalCPUBackend(StorageBackendInterface):
             message = (keys, metadatas)
             data = pickle.dumps(message)
 
-            print(f"XXX Send request")
             self._side_channel.send(data)
-            print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
             logger.debug("Sent the request with %d keys and waiting for ack by notif", len(keys))
 
             notifs = self._agent.get_new_notifs()
@@ -485,7 +467,6 @@ class LocalCPUBackend(StorageBackendInterface):
                 notifs = self._agent.get_new_notifs()
 
             assert len(notifs) == 1, f"notifs len error = {len(notifs)}"
-            print(f"XXX REMOVE ME got response {len(notifs)}")
 
         # NIXL PUSH END
 
