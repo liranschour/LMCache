@@ -463,7 +463,7 @@ class LocalCPUBackend(StorageBackendInterface):
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
-            logger.debug("Sent the request with %d keys and waiting for ack by notif", len(keys))
+            logger.info("XXX Sent the request with %d keys and waiting for ack by notif", len(keys))
 
             notifs = self._agent.get_new_notifs()
 
