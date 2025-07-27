@@ -577,7 +577,7 @@ class LocalCPUBackend(StorageBackendInterface):
             return memory_obj
 
         assert isinstance(self.memory_allocator, MixedMemoryAllocator)
-
+        print(f"XXXXXXXXXXXXXXXXXXXX evict")
         evict_keys = []
         with self.cpu_lock:
             for evict_key in self.hot_cache:
