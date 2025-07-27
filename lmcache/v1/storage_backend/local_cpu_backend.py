@@ -483,8 +483,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
             while len(notifs) == 0:
                 notifs = self._agent.get_new_notifs()
-                assert len(notifs) == 1
 
+            assert len(notifs) == 1. f"notifs len error = {len(notifs)}"
             print(f"XXX REMOVE ME got response {len(notifs)}")
 
         # NIXL PUSH END
