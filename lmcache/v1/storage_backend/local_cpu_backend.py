@@ -372,6 +372,8 @@ class LocalCPUBackend(StorageBackendInterface):
                 self.wait_for_transfer(handle)
                 print(f"XXX after")
 
+                self._agent.send_notif(self.peer_name, b"DONE")
+
                 self.batched_submit_put_task(keys, memory_objs)
                 print(f"XXX Submitted to cache")
 
@@ -477,7 +479,15 @@ class LocalCPUBackend(StorageBackendInterface):
             print(f"XXX Send request")
             self._side_channel.send(data)
             print(f"XXX Sent request len ={len(metadatas)}:{len(keys)}")
-            logger.debug("Sent the request with %d keys", len(keys))
+            logger.debug("Sent the request with %d keys and waiting for ack by notif", len(keys))
+
+            notifs = self._agent.get_new_notifs()
+
+            while len(notifs) == 0:
+                notifs = agent.get_new_notifs()
+
+            print(f"XXX got response {len(notifs)}"
+
         # NIXL PUSH END
 
         return None
