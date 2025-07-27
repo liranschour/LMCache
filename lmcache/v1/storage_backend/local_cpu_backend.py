@@ -484,7 +484,7 @@ class LocalCPUBackend(StorageBackendInterface):
             notifs = self._agent.get_new_notifs()
 
             while len(notifs) == 0:
-                notifs = agent.get_new_notifs()
+                notifs = self._agent.get_new_notifs()
 
             print(f"XXX got response {len(notifs)}")
 
