@@ -591,9 +591,10 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 old_mem_obj.ref_count_down()
                 memory_obj = self.memory_allocator.allocate(shape, dtype, fmt)
-                logger.debug("Evicting 1 chunk from cpu memory")
+                logger.info("XXX Evicting 1 chunk from cpu memory {memory_obj->tensor()}")
                 if memory_obj is not None:
                     break
+        print(f"XXX evicts len = {len(evict_keys)}")
         for evict_key in evict_keys:
             # already freed above in order to allocate new memory object
             # this is to remove the key from the hot cache
