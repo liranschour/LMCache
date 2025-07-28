@@ -304,7 +304,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 #request = NixlRequest.deserialize(msg)
 
                 keys, metadatas = pickle.loads(msg)
-                print(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                logger.debug(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 memory_objs = []
                 local_descs_ids = []
@@ -450,7 +450,6 @@ class LocalCPUBackend(StorageBackendInterface):
         # TODO(Jiayi): optimize this with batching
         metadatas = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
-            print(f"XXX {key}")
             self.submit_put_task(key, memory_obj)
             metadatas.append(memory_obj.metadata)
 
@@ -577,7 +576,6 @@ class LocalCPUBackend(StorageBackendInterface):
             return memory_obj
 
         assert isinstance(self.memory_allocator, MixedMemoryAllocator)
-        print(f"XXXXXXXXXXXXXXXXXXXX evict")
         evict_keys = []
         with self.cpu_lock:
             for evict_key in self.hot_cache:
@@ -592,10 +590,8 @@ class LocalCPUBackend(StorageBackendInterface):
                 old_mem_obj.ref_count_down()
                 memory_obj = self.memory_allocator.allocate(shape, dtype, fmt)
                 if memory_obj is not None:
-                    logger.info(f"XXX Evicting 1 chunk from cpu memory continous={memory_obj.tensor.is_contiguous()}")
                     break
 
-        print(f"XXX evicts len = {len(evict_keys)}")
         for evict_key in evict_keys:
             # already freed above in order to allocate new memory object
             # this is to remove the key from the hot cache
