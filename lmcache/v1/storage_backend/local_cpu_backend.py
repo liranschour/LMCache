@@ -591,7 +591,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 old_mem_obj.ref_count_down()
                 memory_obj = self.memory_allocator.allocate(shape, dtype, fmt)
-                logger.info("XXX Evicting 1 chunk from cpu memory {memory_obj->tensor()}")
+                logger.info(f"XXX Evicting 1 chunk from cpu memory {memory_obj.tensor()} continous={memory_obj.tensor().is_contiguous()}")
                 if memory_obj is not None:
                     break
         print(f"XXX evicts len = {len(evict_keys)}")
