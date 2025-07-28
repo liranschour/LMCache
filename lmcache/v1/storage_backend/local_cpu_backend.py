@@ -140,8 +140,9 @@ class LocalCPUBackend(StorageBackendInterface):
         # HACK static calculation of token size in bytes
         shape = (2, 32, 1, 1024)
         dtype = torch.bfloat16
+        self._nixl_chunk_size = 1
 
-        self._nixl_block_size = (math.prod(shape)) * (torch.tensor([], dtype=dtype).element_size())
+        self._nixl_block_size = (math.prod(shape)) * (torch.tensor([], dtype=dtype).element_size()) * self._nixl_chunk_size
         print(f"XXX nixl block size={self._nixl_block_size}")
 
         assert config.nixl_role in ["sender", "receiver"], (
@@ -449,17 +450,23 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # TODO(Jiayi): optimize this with batching
         metadatas = []
+        pushed_keys = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
+            if memory_obj.get_shape()[2] % self._nixl_chunk_size == 0:
+                print(f"XXX Send partial keys len={len(metadatas)} keys len = {memory_obj.get_shape()[2]}")
+                metadatas.append(memory_obj.metadata)
+                pushed_keys.append(key)
+            else:
+                print(f"XXX skip {memory_obj.get_shape()[2]}")
             self.submit_put_task(key, memory_obj)
-            metadatas.append(memory_obj.metadata)
 
         if self._nixl_role == "sender":
             # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-            message = (keys, metadatas)
+            message = (pushed_keys, metadatas)
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
-            logger.info("Sent the request with %d keys and waiting for ack by notif", len(keys))
+            logger.info("Sent the request with %d keys and waiting for ack by notif", len(pushed_keys))
 
             notifs = self._agent.get_new_notifs()
 
