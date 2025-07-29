@@ -114,6 +114,7 @@ class MemoryObjMetadata:
 
     # Positions when the cache is stored
     cached_positions: Optional[torch.Tensor] = None
+    handle = None
 
     def get_size(self):
         """

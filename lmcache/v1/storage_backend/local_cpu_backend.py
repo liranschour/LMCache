@@ -336,6 +336,9 @@ class LocalCPUBackend(StorageBackendInterface):
                     skip_desc_merge=False,  # XXX need to check this
                 )
 
+                for mem_obj in memory_objs:
+                    mem_obj.metadata.handle = handle
+
                 self.insert_transfer(handle)
 
                 # Begin async xfer.
@@ -354,7 +357,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 # self._agent.release_xfer_handle(handle)
                 # self._active_transfers.pop(handle, None)
 
-                self.wait_for_transfer(handle)
+                #self.wait_for_transfer(handle)
 
                 end = time.perf_counter()
                 logger.info(f"========== TRANSFER completed in {end - start} {(len(local_descs_ids) * self._nixl_block_size)/((end - start) * (1 << 30)):.3f} GB/s")
@@ -453,9 +456,9 @@ class LocalCPUBackend(StorageBackendInterface):
         pushed_keys = []
         for key, memory_obj in zip(keys, memory_objs, strict=False):
             if memory_obj.get_shape()[2] % self._nixl_chunk_size == 0:
-                print(f"XXX Send partial keys len={len(metadatas)} keys len = {memory_obj.get_shape()[2]}")
                 metadatas.append(memory_obj.metadata)
                 pushed_keys.append(key)
+                print(f"XXX Send partial keys len={len(metadatas)} keys len = {memory_obj.get_shape()[2]}")
             else:
                 print(f"XXX skip {memory_obj.get_shape()[2]}")
             self.submit_put_task(key, memory_obj)
@@ -499,6 +502,13 @@ class LocalCPUBackend(StorageBackendInterface):
             # is evicted from the local cpu backend before the caller calls
             # ref count up themselves
             memory_obj.ref_count_up()
+
+            handle = memory_obj.metadata.handle
+            if handle not None:
+                print(f"XXX wait on {handle}")
+                self.wait_for_transfer(handle)
+                print(f"XXX wakeup on {handle}")
+
             self.hot_cache.move_to_end(key)
             return memory_obj
 
