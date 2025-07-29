@@ -504,10 +504,11 @@ class LocalCPUBackend(StorageBackendInterface):
             memory_obj.ref_count_up()
 
             handle = memory_obj.metadata.handle
-            if handle not None:
+            if handle is not None:
                 print(f"XXX wait on {handle}")
                 self.wait_for_transfer(handle)
                 print(f"XXX wakeup on {handle}")
+                memory_obj.metadata.handle = None
 
             self.hot_cache.move_to_end(key)
             return memory_obj
