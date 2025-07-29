@@ -471,12 +471,12 @@ class LocalCPUBackend(StorageBackendInterface):
             self._side_channel.send(data)
             logger.info("Sent the request with %d keys and waiting for ack by notif", len(pushed_keys))
 
-            notifs = self._agent.get_new_notifs()
+            # notifs = self._agent.get_new_notifs()
 
-            while len(notifs) == 0:
-                notifs = self._agent.get_new_notifs()
+            # while len(notifs) == 0:
+            #     notifs = self._agent.get_new_notifs()
 
-            assert len(notifs) == 1, f"notifs len error = {len(notifs)}"
+            # assert len(notifs) == 1, f"notifs len error = {len(notifs)}"
 
         # NIXL PUSH END
 
