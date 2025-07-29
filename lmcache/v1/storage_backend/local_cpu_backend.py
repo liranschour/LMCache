@@ -458,9 +458,8 @@ class LocalCPUBackend(StorageBackendInterface):
             if memory_obj.get_shape()[2] % self._nixl_chunk_size == 0:
                 metadatas.append(memory_obj.metadata)
                 pushed_keys.append(key)
-                print(f"XXX Send partial keys len={len(metadatas)} keys len = {memory_obj.get_shape()[2]}")
             else:
-                print(f"XXX skip {memory_obj.get_shape()[2]}")
+                print(f"XXX skip not aligned chunk size {memory_obj.get_shape()[2]}")
             self.submit_put_task(key, memory_obj)
 
         if self._nixl_role == "sender":
@@ -505,9 +504,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
             handle = memory_obj.metadata.handle
             if handle is not None:
-                print(f"XXX wait on {handle}")
                 self.wait_for_transfer(handle)
-                print(f"XXX wakeup on {handle}")
                 memory_obj.metadata.handle = None
 
             self.hot_cache.move_to_end(key)
