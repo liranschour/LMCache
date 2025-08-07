@@ -521,6 +521,7 @@ class LocalCPUBackend(StorageBackendInterface):
             return memory_obj
 
         assert isinstance(self.memory_allocator, MixedMemoryAllocator)
+
         evict_keys = []
         with self.cpu_lock:
             for evict_key in self.hot_cache:
@@ -534,9 +535,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 old_mem_obj.ref_count_down()
                 memory_obj = self.memory_allocator.allocate(shape, dtype, fmt)
+                logger.debug("Evicting 1 chunk from cpu memory")
                 if memory_obj is not None:
                     break
-
         for evict_key in evict_keys:
             # already freed above in order to allocate new memory object
             # this is to remove the key from the hot cache
