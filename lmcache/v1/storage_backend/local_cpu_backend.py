@@ -45,56 +45,6 @@ import time
 import pickle
 import math
 
-@dataclass
-class NixlRequest:
-    """
-    A dataclass to represent a request received from the remote peer.
-    This can be used to encapsulate the request information.
-    """
-
-    keys: list[CacheEngineKey]
-    metadatas: list[MemoryObjMetadata]
-
-    @staticmethod
-    def encode_custom(obj):
-        if hasattr(obj, "to_dict"):
-            return obj.to_dict()
-        raise TypeError(f"Object of type {type(obj).__name__} is not serializable")
-
-    @staticmethod
-    def decode_custom(d):
-        if "__type__" not in d:
-            return d
-        t = d["__type__"]
-        if t == "CacheEngineKey":
-            return CacheEngineKey.from_dict(d)
-        elif t == "MemoryObjMetadata":
-            return MemoryObjMetadata.from_dict(d)
-        elif t == "NixlRequest":
-            return NixlRequest.from_dict(d)
-        else:
-            return d
-
-    def to_dict(self):
-        return {
-            "__type__": "NixlRequest",
-            "keys": [k.to_dict() for k in self.keys],
-            "metadatas": [m.to_dict() for m in self.metadatas],
-        }
-
-    @staticmethod
-    def from_dict(d):
-        # Note(Kuntai): msgpack will automatically deserialize internal objects,
-        # meaning d["keys"] and d["metadatas"] are already deserialized.
-        return NixlRequest(keys=d["keys"], metadatas=d["metadatas"])
-
-    def serialize(self) -> bytes:
-        return msgpack.packb(self, default=NixlRequest.encode_custom)
-
-    @staticmethod
-    def deserialize(s: bytes) -> "NixlRequest":
-        return msgpack.unpackb(s, object_hook=NixlRequest.decode_custom)
-
 
 if TYPE_CHECKING:
     # First Party
@@ -468,7 +418,7 @@ class LocalCPUBackend(StorageBackendInterface):
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
-            logger.info("Sent the request with %d keys and waiting for ack by notif", len(pushed_keys))
+            #TODO: These memory buffers should be pinned in memory till we get notif for completion
 
             # notifs = self._agent.get_new_notifs()
 
