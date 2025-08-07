@@ -188,7 +188,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         exit()
                     elif state == "DONE":
                         end = time.perf_counter()
-                        logger.info(f"========== TRANSFER completed in {end - start} {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
+                        logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
 
                         self._agent.release_xfer_handle(handle)
                         t_done.set()
