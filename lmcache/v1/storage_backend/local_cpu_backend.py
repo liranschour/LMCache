@@ -181,12 +181,15 @@ class LocalCPUBackend(StorageBackendInterface):
 
             remove_handles = []
             with self._transfers_lock:
-                for handle, t_done in self._transfers.items():
+                for handle, (t_done, msg_size, start) in self._transfers.items():
                     state = self._agent.check_xfer_state(handle)
                     if state == "ERR":
                         print("Transfer got to Error state.")
                         exit()
                     elif state == "DONE":
+                        end = time.perf_counter()
+                        logger.info(f"========== TRANSFER completed in {end - start} {(len(local_descs_ids) * self._nixl_block_size)/((end - start) * (1 << 30)):.3f} GB/s")
+
                         self._agent.release_xfer_handle(handle)
                         t_done.set()
                         remove_handles.append(handle)
@@ -197,15 +200,15 @@ class LocalCPUBackend(StorageBackendInterface):
 
             time.sleep(0.001)  # Avoid busy waiting
 
-    def insert_transfer(self, handle):
+    def insert_transfer(self, handle, msg_size, start):
         with self._transfers_lock:
-            self._transfers[handle] = threading.Event()
+            self._transfers[handle] = (threading.Event(), msg_size, start)
 
     def wait_for_transfer(self, handle):
         t_done = None
         with self._transfers_lock:
             if handle in self._transfers:
-                t_done = self._transfers[handle]
+                t_done = self._transfers[handle][0]
 
         if t_done:
             t_done.wait()
@@ -289,39 +292,16 @@ class LocalCPUBackend(StorageBackendInterface):
                 for mem_obj in memory_objs:
                     mem_obj.metadata.handle = handle
 
-                self.insert_transfer(handle)
-
                 # Begin async xfer.
                 start = time.perf_counter()
+                self.insert_transfer(handle, (len(local_descs_ids) * self._nixl_block_size), start)
+
                 self._agent.transfer(handle)
-
-                # while True:
-                #     state = self._agent.check_xfer_state(handle)
-                #     if state == "ERR":
-                #         print("Transfer got to Error state.")
-                #         exit()
-                #     elif state == "DONE":
-                #         break
-
-                # print(f"XXX tranfer completed")
-                # self._agent.release_xfer_handle(handle)
-                # self._active_transfers.pop(handle, None)
-
-                #self.wait_for_transfer(handle)
-
-                end = time.perf_counter()
-                logger.info(f"========== TRANSFER completed in {end - start} {(len(local_descs_ids) * self._nixl_block_size)/((end - start) * (1 << 30)):.3f} GB/s")
 
                 self.batched_submit_put_task(keys, memory_objs)
 
                 for memory_obj in memory_objs:
                     memory_obj.ref_count_down()
-
-                # self._process_receive_transaction(
-                #     sender_id=sender_id,
-                #     keys=request.keys,
-                #     metadatas=request.metadatas,
-                # )
 
             except zmq.Again as e:  # type: ignore
                 # Handle the timeout when waiting for a message
