@@ -102,6 +102,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         self._agent = nixl_agent(config.nixl_role)
         self._nixl_role = config.nixl_role
+        self._nixl_operation = config.nixl_operation
 
         # Nixl register memory
         mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
@@ -116,6 +117,15 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if config.nixl_role == "sender":
             print(f"XXXX SENDER")
+
+            self._running = True
+            # Start Nixl completion thread
+            self._transfers = {}
+            self._transfers_lock = threading.Lock()
+            self._transfers_thread = threading.Thread(
+                target=self._send_transfers_loop, daemon=True
+            )
+            self._transfers_thread.start()
 
             local_meta = self._agent.get_agent_metadata()
 
@@ -140,9 +150,10 @@ class LocalCPUBackend(StorageBackendInterface):
             remote_meta, remote_mem_base_addr, remote_num_blocks, remote_block_size = pickle.loads(msg)
             assert self._nixl_block_size == remote_block_size
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
+
             # prepare descriptors in case we do WRITE
             self.dst_xfer_side_handle = self.create_xfer_descs(self.peer_name, remote_mem_base_addr, remote_num_blocks, remote_block_size)
-            print(f"SENDER end handshake")
+            print(f"SENDER end handshake with {self.peer_name}")
         else:
             print(f"XXX RECEIVER")
 
@@ -162,11 +173,11 @@ class LocalCPUBackend(StorageBackendInterface):
             )
 
             self._running = True
-            # Start Nixl competion thread
+            # Start Nixl completion thread
             self._transfers = {}
             self._transfers_lock = threading.Lock()
             self._transfers_thread = threading.Thread(
-                target=self._transfers_loop, daemon=True
+                target=self._recv_transfers_loop, daemon=True
             )
             self._transfers_thread.start()
 
@@ -179,27 +190,71 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # NIXL_PUSH_END
 
-    def _transfers_loop(self):
+    def _send_transfers_loop(self):
         while self._running:
 
             remove_handles = []
-            with self._transfers_lock:
-                for handle, (t_done, msg_size, start) in self._transfers.items():
-                    state = self._agent.check_xfer_state(handle)
-                    if state == "ERR":
-                        print("Transfer got to Error state.")
-                        exit()
-                    elif state == "DONE":
-                        end = time.perf_counter()
-                        logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
+            if self._nixl_operation == "WRITE":
+                with self._transfers_lock:
+                    for handle, (t_done, msg_size, start) in self._transfers.items(): # XXX temp - need to use get_finished() here
+                        state = self._agent.check_xfer_state(handle)
 
-                        self._agent.release_xfer_handle(handle)
-                        t_done.set()
-                        remove_handles.append(handle)
+                        if state == "ERR":
+                            print("Transfer got to Error state.")
+                            exit()
+                        elif state == "DONE":
+                            end = time.perf_counter()
+                            logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
 
-                for handle in remove_handles:
-                    assert handle in self._transfers
-                    del self._transfers[handle]
+                            self._agent.release_xfer_handle(handle)
+                            remove_handles.append(handle)
+
+                    for handle in remove_handles:
+                        assert handle in self._transfers
+                        del self._transfers[handle]
+
+            time.sleep(0.001)  # Avoid busy waitingsleep
+
+    def _recv_transfers_loop(self):
+        while self._running:
+
+            remove_handles = []
+            if self._nixl_operation == "READ":
+                with self._transfers_lock:
+                    for handle, (t_done, msg_size, start) in self._transfers.items():
+                        state = self._agent.check_xfer_state(handle)
+
+                        if state == "ERR":
+                            print("Transfer got to Error state.")
+                            exit()
+                        elif state == "DONE":
+                            end = time.perf_counter()
+                            logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
+
+                            self._agent.release_xfer_handle(handle)
+                            t_done.set()
+                            remove_handles.append(handle)
+
+                    for handle in remove_handles:
+                        assert handle in self._transfers
+                        del self._transfers[handle]
+            else:
+                # WRITE
+                all_notifs = self._agent.get_new_notifs().values() # XXX the code assumes a single peer for now
+                for notifs in all_notifs:
+                    for notif in notifs:
+                        handle = notif.decode("utf-8")
+
+                        value = None
+                        with self._transfers_lock:
+                            value = self._transfers.pop(handle, None)
+
+                        if value is not None:
+                            t_done, msg_size, start = value
+                            end = time.perf_counter()
+                            logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
+
+                            t_done.set()
 
             time.sleep(0.001)  # Avoid busy waiting
 
@@ -209,12 +264,15 @@ class LocalCPUBackend(StorageBackendInterface):
 
     def wait_for_transfer(self, handle):
         t_done = None
+
         with self._transfers_lock:
             if handle in self._transfers:
                 t_done = self._transfers[handle][0]
 
+        logger.debug(f"XXX wait_for {handle} {t_done}")
         if t_done:
             t_done.wait()
+        logger.debug(f"XXX wait_for completed {handle}")
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
@@ -265,15 +323,17 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 #request = NixlRequest.deserialize(msg)
 
-                keys, metadatas = pickle.loads(msg)
-                logger.debug(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                keys, metadatas, nixl_operation = pickle.loads(msg)
+                logger.debug(f"XXX Received request for NIXL {nixl_operation} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
+                l_metadatas = []
                 memory_objs = []
                 local_descs_ids = []
                 remote_descs_ids = []
                 for key, meta in zip(keys, metadatas, strict=False):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
+                    l_metadatas.append(mem_obj.metadata)
 
                     assert meta.phy_size % self._nixl_block_size == 0
                     num_blocks = meta.phy_size // self._nixl_block_size
@@ -281,35 +341,55 @@ class LocalCPUBackend(StorageBackendInterface):
                     local_base_block_id = mem_obj.metadata.address // self._nixl_block_size
                     remote_base_block_id = meta.address // self._nixl_block_size
 
-                    for block_id in range(num_blocks):
-                        local_descs_ids.append(local_base_block_id + block_id)
-                        remote_descs_ids.append(remote_base_block_id + block_id)
+                    if nixl_operation == "READ":
+                        for block_id in range(num_blocks):
+                            local_descs_ids.append(local_base_block_id + block_id)
+                            remote_descs_ids.append(remote_base_block_id + block_id)
 
+                handle = None
+                if nixl_operation == "READ":
+                    # Prepare transfer with Nixl.
+                    start = time.perf_counter()
 
-                # Prepare transfer with Nixl.
-                handle = self._agent.make_prepped_xfer(
-                    "READ",
-                    self.src_xfer_side_handle,
-                    local_descs_ids,
-                    self.dst_xfer_side_handle,
-                    remote_descs_ids,
-                    notif_msg="XXX",
-                    skip_desc_merge=False,  # XXX need to check this
-                )
+                    handle = self._agent.make_prepped_xfer(
+                        "READ",
+                        self.src_xfer_side_handle,
+                        local_descs_ids,
+                        self.dst_xfer_side_handle,
+                        remote_descs_ids,
+                        notif_msg="XXX",
+                        skip_desc_merge=False,  # XXX need to check this
+                    )
 
-                for mem_obj in memory_objs:
-                    mem_obj.metadata.handle = handle
+                    for mem_obj in memory_objs:
+                        mem_obj.metadata.handle = handle
 
-                # Begin async xfer.
-                start = time.perf_counter()
-                self.insert_transfer(handle, (len(local_descs_ids) * self._nixl_block_size), start)
+                    # Begin async xfer.
+                    self.insert_transfer(handle, (len(local_descs_ids) * self._nixl_block_size), start)
 
-                self._agent.transfer(handle)
+                    self._agent.transfer(handle)
+                    self.batched_submit_put_task(keys, memory_objs)
 
-                self.batched_submit_put_task(keys, memory_objs)
+                    for memory_obj in memory_objs:
+                        memory_obj.ref_count_down()
+                else: # WRITE
+                    handle = str(uuid.uuid4())
+                    t_len = 0
 
-                for memory_obj in memory_objs:
-                    memory_obj.ref_count_down()
+                    for mem_obj in memory_objs:
+                        mem_obj.metadata.handle = handle
+                        t_len += mem_obj.metadata.phy_size
+
+                    start = time.perf_counter()
+                    self.insert_transfer(handle, t_len, start)
+
+                    self.batched_submit_put_task(keys, memory_objs)
+
+                    message = (l_metadatas, handle)
+                    data = pickle.dumps(message)
+
+                    self._side_channel.send_multipart([sender_id, data])
+                    logger.debug(f"XXX Receiver sent to sender metadata len={len(l_metadatas)} for {handle}")
 
             except zmq.Again as e:  # type: ignore
                 # Handle the timeout when waiting for a message
@@ -397,15 +477,68 @@ class LocalCPUBackend(StorageBackendInterface):
                 metadatas.append(memory_obj.metadata)
                 pushed_keys.append(key)
             else:
-                print(f"XXX skip not aligned chunk size {memory_obj.get_shape()[2]}")
+                logger.warning(f"XXX skip not aligned chunk size {memory_obj.get_shape()[2]}")
             self.submit_put_task(key, memory_obj)
 
         if self._nixl_role == "sender":
             # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-            message = (pushed_keys, metadatas)
+            message = (pushed_keys, metadatas, self._nixl_operation)
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
+
+            if self._nixl_operation == "WRITE":
+                msg = self._side_channel.recv()
+                r_metadatas, msg_id = pickle.loads(msg)
+
+                logger.debug(f"XXX Sender got metadata for {msg_id} descriptor length {len(r_metadatas)} metadatas {len(metadatas)}")
+                assert len(metadatas) == len(r_metadatas)
+
+                local_descs_ids = []
+                remote_descs_ids = []
+                for l_meta, r_meta in zip(metadatas, r_metadatas, strict=False):
+                    assert r_meta.phy_size % self._nixl_block_size == 0
+                    num_blocks = r_meta.phy_size // self._nixl_block_size
+
+                    local_base_block_id = l_meta.address // self._nixl_block_size
+                    remote_base_block_id = r_meta.address // self._nixl_block_size
+
+                    for block_id in range(num_blocks):
+                        local_descs_ids.append(local_base_block_id + block_id)
+                        remote_descs_ids.append(remote_base_block_id + block_id)
+
+                # Prepare transfer with Nixl.
+                start = time.perf_counter()
+
+                handle = self._agent.make_prepped_xfer(
+                    "WRITE",
+                    self.src_xfer_side_handle,
+                    local_descs_ids,
+                    self.dst_xfer_side_handle,
+                    remote_descs_ids,
+                    notif_msg=msg_id,
+                    skip_desc_merge=False,  # XXX need to check this
+                )
+
+                # XXX TODO: Increase reference count of memory objects till transfer is completed
+
+                self.insert_transfer(handle, (len(local_descs_ids) * self._nixl_block_size), start)
+
+                # Begin async xfer.
+                self._agent.transfer(handle)
+
+                # sender_done = False
+                # while not sender_done:
+                #     state = self._agent.check_xfer_state(handle)
+                #     if state == "ERR":
+                #         print("Transfer got to Error state.")
+                #         exit()
+                #     elif state == "DONE":
+                #         print(f"XXX write DONE")
+                #         sender_done = True
+                #     time.sleep(0.001)  # Avoid busy waitingsleep
+
+
             #TODO: These memory buffers should be pinned in memory till we get notif for completion
 
             # notifs = self._agent.get_new_notifs()
