@@ -136,9 +136,12 @@ class LocalCPUBackend(StorageBackendInterface):
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
-            remote_meta = self._side_channel.recv()
+            msg = self._side_channel.recv()
+            remote_meta, remote_mem_base_addr, remote_num_blocks, remote_block_size = pickle.loads(msg)
+            assert self._nixl_block_size == remote_block_size
             self.peer_name = self._agent.add_remote_agent(remote_meta).decode("utf-8")
-
+            # prepare descriptors in case we do WRITE
+            self.dst_xfer_side_handle = self.create_xfer_descs(self.peer_name, remote_mem_base_addr, remote_num_blocks, remote_block_size)
             print(f"SENDER end handshake")
         else:
             print(f"XXX RECEIVER")
@@ -250,7 +253,12 @@ class LocalCPUBackend(StorageBackendInterface):
 
                     self.dst_xfer_side_handle = self.create_xfer_descs(self.peer_name, sender_mem_base_addr, sender_num_blocks, sender_block_size)
 
-                    self._side_channel.send_multipart([sender_id, local_meta])
+                    # prepare message to sender
+                    mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
+                    message = (local_meta, mem_base_addr, mem_size // self._nixl_block_size, self._nixl_block_size)
+                    data = pickle.dumps(message)
+
+                    self._side_channel.send_multipart([sender_id, data])
                     print(f"XXX RECEIVER end handshake")
                     logger.info(f"New sender connected with ID: {sender_id.decode()}")
                     continue
