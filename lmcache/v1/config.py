@@ -97,6 +97,8 @@ class LMCacheEngineConfig:
     nixl_buffer_device: Optional[str] = None
     # HACK: explicit option to enable/disable nixl GC before it's mature enough
     nixl_enable_gc: Optional[bool] = False
+    # HACK: explicit option to set nixl transfer operation: READ|WRITE
+    nixl_operation: Optional[str] = "READ"
 
     # The url of the actual remote lmcache instance for auditing
     audit_actual_remote_url: Optional[str] = None
@@ -150,6 +152,7 @@ class LMCacheEngineConfig:
         nixl_buffer_size: Optional[int] = None,
         nixl_buffer_device: Optional[str] = None,
         nixl_enable_gc: Optional[bool] = False,
+        nixl_operation: Optional[str] = "READ",
         audit_actual_remote_url: Optional[str] = None,
         weka_path: Optional[str] = None,
         gds_path: Optional[str] = None,
@@ -188,6 +191,7 @@ class LMCacheEngineConfig:
             nixl_buffer_size,
             nixl_buffer_device,
             nixl_enable_gc,
+            nixl_operation,
             audit_actual_remote_url,
             weka_path,
             gds_path,
@@ -328,6 +332,7 @@ class LMCacheEngineConfig:
         nixl_buffer_size = config.get("nixl_buffer_size", None)
         nixl_buffer_device = config.get("nixl_buffer_device", None)
         nixl_enable_gc = config.get("nixl_enable_gc", False)
+        nixl_operation = config.get("nixl_operation", "READ")
 
         extra_config = config.get("extra_config", None)
         if extra_config is not None:
@@ -400,6 +405,7 @@ class LMCacheEngineConfig:
                 nixl_buffer_size,
                 nixl_buffer_device,
                 nixl_enable_gc,
+                nixl_operation,
                 audit_actual_remote_url,
                 weka_path,
                 gds_path,
@@ -546,6 +552,9 @@ class LMCacheEngineConfig:
         config.nixl_enable_gc = to_bool(
             parse_env(get_env_name("nixl_enable_gc"), config.nixl_enable_gc)
         )
+        config.nixl_enable_gc = parse_env(
+            get_env_name("nixl_operation"), config.nixl_operation
+        )
 
         # Try getting "legacy" nixl config
         if config.nixl_receiver_host is None:
@@ -628,6 +637,7 @@ class LMCacheEngineConfig:
             assert self.nixl_buffer_size is not None
             assert self.nixl_buffer_device is not None
             assert self.nixl_enable_gc is not None
+            assert self.nixl_operation is not None
 
             assert self.local_cpu is False, "Nixl only supports local_cpu=False"
             assert self.max_local_cpu_size == 0, (
@@ -674,6 +684,7 @@ class LMCacheEngineConfig:
             "nixl_buffer_size": self.nixl_buffer_size,
             "nixl_buffer_device": self.nixl_buffer_device,
             "nixl_enable_gc": self.nixl_enable_gc,
+            "nixl_operation": self.nixl_operation,
             "weka_path": self.weka_path,
             "gds_path": self.gds_path,
             "extra_config": self.extra_config,
