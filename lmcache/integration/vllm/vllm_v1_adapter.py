@@ -755,7 +755,7 @@ class LMCacheConnectorV1Impl:
                 request.req_id,
             )
             self.lmcache_engine.store(
-                request.request_id,
+                request.req_id,
                 token_ids,
                 mask=store_mask,
                 kvcaches=kvcaches,
