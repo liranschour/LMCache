@@ -768,6 +768,7 @@ class LMCacheConnectorV1Impl:
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        print(f"XXX get_finished {len(finished_req_ids)}")
         return None, None
 
     ###################
@@ -970,6 +971,7 @@ class LMCacheConnectorV1Impl:
         params = request.kv_transfer_params
         return_params = None
 
+        print(f"XXX request_finished {request} len blocks ids={len(block_ids)}")
         # NOTE: Used to stream back the first token
         # for disagg prefill
         if params is not None and "ret_first_tok" in params:
