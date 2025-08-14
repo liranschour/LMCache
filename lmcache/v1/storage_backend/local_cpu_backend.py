@@ -258,7 +258,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 #request = NixlRequest.deserialize(msg)
 
                 req_id, keys, metadatas = pickle.loads(msg)
-                logger.debug(f"XXX Received request {req_id} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                logger.info(f"XXX Received request {req_id} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 memory_objs = []
                 local_descs_ids = []
