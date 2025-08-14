@@ -149,6 +149,7 @@ class LMCacheEngine:
     @torch.inference_mode()
     def store(
         self,
+        request_id,
         tokens: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         **kwargs,
@@ -170,7 +171,7 @@ class LMCacheEngine:
         :raises: ValueError if the number of Falses in the mask is not a
             multiple of the chunk size.
         """
-
+        print(f"XXX store {request_id}")
         if mask is not None:
             num_to_store_tokens = torch.sum(mask).item()
         else:

@@ -755,6 +755,7 @@ class LMCacheConnectorV1Impl:
                 request.req_id,
             )
             self.lmcache_engine.store(
+                request.request_id,
                 token_ids,
                 mask=store_mask,
                 kvcaches=kvcaches,
@@ -768,7 +769,10 @@ class LMCacheConnectorV1Impl:
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
-        print(f"XXX get_finished {len(finished_req_ids)}")
+            print(f"XXX get_finished {len(finished_req_ids)}")
+            for req_id in finished_req_ids:
+                print(f"XXX get req_id: {req_id}")
+
         return None, None
 
     ###################
@@ -971,7 +975,7 @@ class LMCacheConnectorV1Impl:
         params = request.kv_transfer_params
         return_params = None
 
-        print(f"XXX request_finished {request} len blocks ids={len(block_ids)}")
+        print(f"XXX request_finished {request.request_id} len blocks ids={len(block_ids)}")
         # NOTE: Used to stream back the first token
         # for disagg prefill
         if params is not None and "ret_first_tok" in params:
