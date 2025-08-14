@@ -298,7 +298,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 self._agent.transfer(handle)
 
-                self.batched_submit_put_task(keys, memory_objs)
+                self.batched_submit_put_task(req_id, keys, memory_objs)
 
                 for memory_obj in memory_objs:
                     memory_obj.ref_count_down()
@@ -395,6 +395,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if self._nixl_role == "sender":
             # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
+            assert req_id is not None
             message = (req_id, pushed_keys, metadatas)
             data = pickle.dumps(message)
 
