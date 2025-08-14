@@ -257,8 +257,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 #request = NixlRequest.deserialize(msg)
 
-                keys, metadatas = pickle.loads(msg)
-                logger.debug(f"XXX Received request with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                req_id, keys, metadatas = pickle.loads(msg)
+                logger.debug(f"XXX Received request {req_id} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 memory_objs = []
                 local_descs_ids = []
@@ -370,6 +370,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
     def batched_submit_put_task(
         self,
+        req_id: str,
         keys: List[CacheEngineKey],
         memory_objs: List[MemoryObj],
     ) -> Optional[List[Future]]:
@@ -394,7 +395,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if self._nixl_role == "sender":
             # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-            message = (pushed_keys, metadatas)
+            message = (req_id, pushed_keys, metadatas)
             data = pickle.dumps(message)
 
             self._side_channel.send(data)

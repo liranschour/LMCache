@@ -71,7 +71,7 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
     # have more flexibility to do optimizations.
     @abc.abstractmethod
     def batched_submit_put_task(
-        self, keys: List[CacheEngineKey], objs: List[MemoryObj]
+        self, req_id: Optional[str], keys: List[CacheEngineKey], objs: List[MemoryObj]
     ) -> Optional[List[Future]]:
         """
         An async function to put the MemoryObj into the storage backend.
