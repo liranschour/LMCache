@@ -497,6 +497,7 @@ class LMCacheConnectorV1Impl:
             logger.warning("In connector.start_load_kv, but the attn_metadata is None")
             return
 
+        print(f"XXXX after")
         assert self.lmcache_engine is not None
 
         for idx, request in enumerate(metadata.requests):
