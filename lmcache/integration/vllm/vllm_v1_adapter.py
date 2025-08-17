@@ -497,7 +497,6 @@ class LMCacheConnectorV1Impl:
             logger.warning("In connector.start_load_kv, but the attn_metadata is None")
             return
 
-        print(f"XXXX after")
         assert self.lmcache_engine is not None
 
         for idx, request in enumerate(metadata.requests):
@@ -547,7 +546,9 @@ class LMCacheConnectorV1Impl:
                     next(layerwise_retriever)
                     self.layerwise_retrievers.append(layerwise_retriever)
             else:
+                print(f"XXX Before retrieve req_id={request.req_id}")
                 ret_token_mask = self.lmcache_engine.retrieve(
+                    request.req_id,
                     tokens[:lmcache_cached_tokens],
                     token_mask[:lmcache_cached_tokens],
                     kvcaches=kvcaches,

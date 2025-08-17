@@ -350,6 +350,7 @@ class LMCacheEngine:
     @torch.inference_mode()
     def retrieve(
         self,
+        req_id,
         tokens: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         **kwargs,
@@ -382,7 +383,7 @@ class LMCacheEngine:
         monitor_req_id = self.stats_monitor.on_retrieve_request(num_required_tokens)
 
         ret_mask = torch.zeros_like(tokens, dtype=torch.bool, device="cpu")
-
+        logger.info(f"XXX {request.req_id}")
         key_mapping: Dict[str, List[CacheEngineKey]] = {}
         start_mapping: Dict[str, List[int]] = {}
         end_mapping: Dict[str, List[int]] = {}
