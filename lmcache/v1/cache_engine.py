@@ -383,7 +383,7 @@ class LMCacheEngine:
         monitor_req_id = self.stats_monitor.on_retrieve_request(num_required_tokens)
 
         ret_mask = torch.zeros_like(tokens, dtype=torch.bool, device="cpu")
-        logger.info(f"XXX {request.req_id}")
+        logger.info(f"XXX {req_id}")
         key_mapping: Dict[str, List[CacheEngineKey]] = {}
         start_mapping: Dict[str, List[int]] = {}
         end_mapping: Dict[str, List[int]] = {}
@@ -442,6 +442,7 @@ class LMCacheEngine:
             memory_objs = self.storage_manager.batched_get(
                 keys=keys,
                 storage_backend_name=location,
+                req_id=req_id,
             )
             reordered_memory_objs.extend(memory_objs)
             reordered_keys.extend(keys)

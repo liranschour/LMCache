@@ -14,7 +14,7 @@
 
 # Standard
 from collections import OrderedDict
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, List, Optional
 import threading
 
@@ -173,15 +173,18 @@ class LocalCPUBackend(StorageBackendInterface):
             )
             self._sender_id = None
             self._receiver_thread.start()
+            self._transfer_completion_executor = ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="vllm-nixl-txn-completion")
 
         # NIXL_PUSH_END
 
     def _transfers_loop(self):
         while self._running:
 
-            remove_handles = []
+            finished_transfer = []
             with self._transfers_lock:
-                for handle, (t_done, msg_size, start) in self._transfers.items():
+                for req_id, (handle, t_done, msg_size, start) in self._transfers.items():
                     state = self._agent.check_xfer_state(handle)
                     if state == "ERR":
                         print("Transfer got to Error state.")
@@ -192,26 +195,36 @@ class LocalCPUBackend(StorageBackendInterface):
 
                         self._agent.release_xfer_handle(handle)
                         t_done.set()
-                        remove_handles.append(handle)
+                        finished_transfer.append(req_id)
 
-                for handle in remove_handles:
-                    assert handle in self._transfers
-                    del self._transfers[handle]
+                for req_id in finished_transfer:
+                    assert req_id in self._transfers
+                    del self._transfers[req_id]
 
             time.sleep(0.001)  # Avoid busy waiting
 
-    def insert_transfer(self, handle, msg_size, start):
+    def insert_transfer(self, req_id, handle, msg_size, start):
+        logger.info(f"XXX insert_transfer: {req_id}, {handle}, {msg_size}")
         with self._transfers_lock:
-            self._transfers[handle] = (threading.Event(), msg_size, start)
+            self._transfers[req_id] = (handle, threading.Event(), msg_size, start)
 
-    def wait_for_transfer(self, handle):
+    def req_is_waiting(self, req_id) -> bool:
+        with self._transfers_lock:
+            exist = req_id in self._transfers
+
+        logger.info(f"XXX {req_id} req_is_waiting returned: {exist}")
+        return exist
+
+    def wait_for_transfer(self, req_id):
+        logger.info(f"XXX wait_for_transfer: {req_id}")
         t_done = None
         with self._transfers_lock:
-            if handle in self._transfers:
-                t_done = self._transfers[handle][0]
+            if req_id in self._transfers:
+                _, t_done, *_ = self._transfers[req_id]
 
         if t_done:
             t_done.wait()
+        logger.info(f"XXX exit wait_for_transfer: {t_done}")
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
@@ -290,11 +303,11 @@ class LocalCPUBackend(StorageBackendInterface):
                 )
 
                 for mem_obj in memory_objs:
-                    mem_obj.metadata.handle = handle
+                    mem_obj.metadata.handle = req_id
 
                 # Begin async xfer.
                 start = time.perf_counter()
-                self.insert_transfer(handle, (len(local_descs_ids) * self._nixl_block_size), start)
+                self.insert_transfer(req_id, handle, (len(local_descs_ids) * self._nixl_block_size), start)
 
                 self._agent.transfer(handle)
 
@@ -421,9 +434,43 @@ class LocalCPUBackend(StorageBackendInterface):
     ) -> Optional[Future]:
         return None
 
+    def _batch_get_async(
+            self,
+            keys: List[CacheEngineKey],
+            req_id: str,
+    ) -> List[MemoryObj]:
+        self.wait_for_transfer(req_id)
+        return self._batch_get_blocking(keys, req_id) # XXX HACK remove me
+
+    def batched_get_blocking(
+        self,
+        keys: List[CacheEngineKey],
+        req_id: Optional[str],
+    ) -> List[MemoryObj]:
+        if self.req_is_waiting(req_id):
+            fut = self._transfer_completion_executor.submit(
+                self._batch_get_async, keys, req_id)
+            logger.info(f"XXX before result()")
+            mem_objs = fut.result() # XXX HACK block for now
+            logger.info(f"XXX after result()")
+            return mem_objs
+        else:
+            return self._batch_get_blocking(keys, req_id)
+
+    def _batch_get_blocking(
+            self,
+            keys: List[CacheEngineKey],
+            req_id: Optional[str],
+    ) -> List[MemoryObj]:
+        mem_objs = []
+        for key in keys:
+            mem_objs.append(self.get_blocking(key, req_id))
+        return mem_objs
+
     def get_blocking(
         self,
         key: CacheEngineKey,
+        req_id: Optional[str],
     ) -> Optional[MemoryObj]:
         with self.cpu_lock:
             if key not in self.hot_cache:
@@ -435,6 +482,7 @@ class LocalCPUBackend(StorageBackendInterface):
             memory_obj.ref_count_up()
 
             handle = memory_obj.metadata.handle
+            assert req_id == handle
             if handle is not None:
                 self.wait_for_transfer(handle)
                 memory_obj.metadata.handle = None

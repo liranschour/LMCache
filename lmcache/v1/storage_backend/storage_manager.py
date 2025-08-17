@@ -241,12 +241,13 @@ class StorageManager:
         self,
         keys: List[CacheEngineKey],
         storage_backend_name: str,
+        req_id: str,
     ) -> List[MemoryObj]:
         """
         Non-blocking function to get the memory objects from the storages.
         """
         storage_backend = self.storage_backends[storage_backend_name]
-        memory_objs = storage_backend.batched_get_blocking(keys)
+        memory_objs = storage_backend.batched_get_blocking(keys, req_id)
         return memory_objs
 
     def layerwise_batched_get(

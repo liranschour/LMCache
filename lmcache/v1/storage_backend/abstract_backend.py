@@ -101,6 +101,7 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
     def get_blocking(
         self,
         key: CacheEngineKey,
+        req_id: Optional[str],
     ) -> Optional[MemoryObj]:
         """
         A blocking function to get the kv cache from the storage backend.
@@ -130,6 +131,7 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
     def batched_get_blocking(
         self,
         keys: List[CacheEngineKey],
+        req_id: Optional[str],
     ) -> List[MemoryObj]:
         """
         A blcocking function to get the kv cache from the storage backend.
@@ -140,7 +142,7 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
         """
         mem_objs = []
         for key in keys:
-            mem_objs.append(self.get_blocking(key))
+            mem_objs.append(self.get_blocking(key, req_id))
         return mem_objs
 
     @abc.abstractmethod
