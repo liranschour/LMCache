@@ -22,6 +22,7 @@ from typing import (
     List,
     Optional,
     Sequence,
+    Tuple,
 )
 import asyncio
 import threading
@@ -242,13 +243,14 @@ class StorageManager:
         keys: List[CacheEngineKey],
         storage_backend_name: str,
         req_id: str,
-    ) -> List[MemoryObj]:
+    ) -> Tuple[List[MemoryObj], Optional[Future]]:
         """
         Non-blocking function to get the memory objects from the storages.
         """
         storage_backend = self.storage_backends[storage_backend_name]
-        memory_objs = storage_backend.batched_get_blocking(keys, req_id)
-        return memory_objs
+        memory_objs, fut = storage_backend.batched_get_blocking(keys, req_id)
+
+        return memory_objs, fut
 
     def layerwise_batched_get(
         self,

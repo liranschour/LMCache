@@ -547,13 +547,16 @@ class LMCacheConnectorV1Impl:
                     self.layerwise_retrievers.append(layerwise_retriever)
             else:
                 print(f"XXX Before retrieve req_id={request.req_id}")
-                ret_token_mask = self.lmcache_engine.retrieve(
+                ret_token_mask, is_async = self.lmcache_engine.retrieve(
                     request.req_id,
                     tokens[:lmcache_cached_tokens],
                     token_mask[:lmcache_cached_tokens],
                     kvcaches=kvcaches,
                     slot_mapping=slot_mapping[:lmcache_cached_tokens],
                 )
+
+                if is_async:
+                    return
 
                 # Check the result
                 num_retrieved_tokens = ret_token_mask.sum().item()

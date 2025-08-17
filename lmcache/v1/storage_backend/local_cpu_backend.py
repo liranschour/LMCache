@@ -15,7 +15,7 @@
 # Standard
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
 import threading
 
 # Third Party
@@ -446,16 +446,16 @@ class LocalCPUBackend(StorageBackendInterface):
         self,
         keys: List[CacheEngineKey],
         req_id: Optional[str],
-    ) -> List[MemoryObj]:
+    ) -> Tuple[List[MemoryObj], Optional[Future]]:
         if self.req_is_waiting(req_id):
             fut = self._transfer_completion_executor.submit(
                 self._batch_get_async, keys, req_id)
-            logger.info(f"XXX before result()")
-            mem_objs = fut.result() # XXX HACK block for now
-            logger.info(f"XXX after result()")
-            return mem_objs
+            #logger.info(f"XXX before result()")
+            #mem_objs = fut.result() # XXX HACK block for now
+            #logger.info(f"XXX after result()")
+            return None, fut
         else:
-            return self._batch_get_blocking(keys, req_id)
+            return self._batch_get_blocking(keys, req_id), None
 
     def _batch_get_blocking(
             self,

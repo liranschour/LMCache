@@ -13,10 +13,11 @@
 # limitations under the License.
 
 # Standard
-from typing import Dict, Generator, List, Optional, Union
+from typing import Dict, Generator, List, Optional, Union, Tuple
 import asyncio
 import multiprocessing
 import time
+from functools import partial
 
 # Third Party
 import torch
@@ -346,6 +347,31 @@ class LMCacheEngine:
         logger.debug(f"Stored {tot_token_num} out of total {len(tokens)} tokens")
         yield
 
+    def on_get_done(self, fut, keys, starts, ends, **kwargs):
+        logger.info(f"XXX on_get_done: before result()")
+        memory_objs = fut.result()
+
+        # NOTE(Jiayi): memory_obj doesn't have to be a pinned
+        # cpu tensor for the sake of performance.
+        # For example, disk->gpu is faster than disk->cpu->gpu.
+        # RDMA is another example.
+        self.gpu_connector.batched_to_gpu(
+            memory_objs, starts, ends, **kwargs
+        )
+        logger.info(f"XXX on_get_done: after batched_to_gpu")
+
+        # TODO(Jiayi): Remove the following for loop with batched operations
+        for key, memory_obj in zip(keys, memory_objs, strict=False):
+            memory_obj.ref_count_down()
+
+            # NOTE (ApostaC): This is only for the current implementation:
+            # When the object is retrieved back to vLLM, the storage backend
+            # will immediately remove the object from itself
+            if self.remove_after_retrieve:
+                self.storage_manager.remove(key)
+            else:
+                self.storage_manager.batched_unpin([key])
+
     @_lmcache_nvtx_annotate
     @torch.inference_mode()
     def retrieve(
@@ -354,7 +380,7 @@ class LMCacheEngine:
         tokens: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, bool]:
         """Retrieve the KV caches from the cache engine. And put the retrieved
         KV cache to the serving engine via the GPU connector.
 
@@ -439,11 +465,20 @@ class LMCacheEngine:
         # TODO(Jiayi): We can parallelize the retrieval from
         # different storage backends.
         for location, keys in key_mapping.items():
-            memory_objs = self.storage_manager.batched_get(
+            memory_objs, fut = self.storage_manager.batched_get(
                 keys=keys,
                 storage_backend_name=location,
                 req_id=req_id,
             )
+
+            if fut is not None:
+                fut.add_done_callback(
+                    partial(self.on_get_done, keys,
+                            start_mapping[location], end_mapping[location], kwargs)
+                )
+                # memory_objs = fut.result()
+                return None, True
+
             reordered_memory_objs.extend(memory_objs)
             reordered_keys.extend(keys)
             reordered_starts.extend(start_mapping[location])
@@ -476,7 +511,7 @@ class LMCacheEngine:
             f"out of {num_required_tokens} "
             f"out of total {len(tokens)} tokens"
         )
-        return ret_mask
+        return ret_mask, False
 
     @_lmcache_nvtx_annotate
     @torch.inference_mode()

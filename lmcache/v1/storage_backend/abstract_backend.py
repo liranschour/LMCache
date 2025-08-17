@@ -14,7 +14,7 @@
 
 # Standard
 from concurrent.futures import Future
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import abc
 
 # Third Party
@@ -132,7 +132,7 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
         self,
         keys: List[CacheEngineKey],
         req_id: Optional[str],
-    ) -> List[MemoryObj]:
+    ) -> Tuple[List[MemoryObj], Optional[Future]]:
         """
         A blcocking function to get the kv cache from the storage backend.
 
@@ -140,10 +140,11 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
 
         :return: a list of memory objects.
         """
+
         mem_objs = []
         for key in keys:
             mem_objs.append(self.get_blocking(key, req_id))
-        return mem_objs
+        return mem_objs, None
 
     @abc.abstractmethod
     def pin(
