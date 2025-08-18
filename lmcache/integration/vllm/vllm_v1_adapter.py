@@ -789,7 +789,7 @@ class LMCacheConnectorV1Impl:
         self,
         request: "Request",
         num_computed_tokens: int,
-    ) -> int:
+    ) -> tuple[int, bool]:
         """
         Check for external KV cache hit.
 
@@ -804,7 +804,7 @@ class LMCacheConnectorV1Impl:
         """
 
         if self.kv_role == "kv_producer":
-            return 0
+            return 0, False
 
         token_ids = torch.tensor(request.prompt_token_ids)
 
@@ -840,7 +840,7 @@ class LMCacheConnectorV1Impl:
         )
 
         if need_to_allocate <= 0:
-            return 0
+            return 0, False
 
         self.load_specs[request.request_id] = LoadSpec(
             vllm_cached_tokens=num_computed_tokens,
@@ -851,7 +851,7 @@ class LMCacheConnectorV1Impl:
         # TODO: Align to vLLM block size. Should test whether it can be removed
         # need_to_allocate = need_to_allocate // self._block_size * \
         #        self._block_size
-        return need_to_allocate
+        return need_to_allocate, False
 
     @_lmcache_nvtx_annotate
     def update_state_after_alloc(self, request: "Request", num_external_tokens: int):
