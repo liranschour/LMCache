@@ -808,7 +808,17 @@ class LMCacheConnectorV1Impl:
             return 0, False
 
         if params is not None and params.get("do_remote_prefill"):
-            logger.info(f"XXX {len(request.prompt_token_ids) - num_computed_tokens}")
+            need_to_allocate = len(request.prompt_token_ids) - num_computed_tokens
+            logger.info(f"XXX {need_to_allocate}")
+
+            if num_external_hit_tokens == request.num_tokens:
+                need_to_allocate -= 1
+
+            self.load_specs[request.request_id] = LoadSpec(
+                vllm_cached_tokens=num_computed_tokens,
+                lmcache_cached_tokens=len(request.prompt_token_ids),
+                can_load=False,
+            )
             return (len(request.prompt_token_ids) - num_computed_tokens), True
 
         token_ids = torch.tensor(request.prompt_token_ids)
