@@ -802,7 +802,8 @@ class LMCacheConnectorV1Impl:
             the number of tokens that can be loaded from the
             external KV cache beyond what is already computed.
         """
-
+        params = request.kv_transfer_params
+        print(f"XXX {params}")
         if self.kv_role == "kv_producer":
             return 0, False
 
@@ -986,6 +987,7 @@ class LMCacheConnectorV1Impl:
         if params is not None and "ret_first_tok" in params:
             return_params = {
                 "first_tok": request._output_token_ids[0],
+                "TEST_XX" : True,
             }
 
         return 0, return_params
