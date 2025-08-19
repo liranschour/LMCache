@@ -811,7 +811,7 @@ class LMCacheConnectorV1Impl:
             need_to_allocate = len(request.prompt_token_ids) - num_computed_tokens
             logger.info(f"XXX {need_to_allocate}")
 
-            if num_external_hit_tokens == request.num_tokens:
+            if len(request.prompt_token_ids) == request.num_tokens:
                 need_to_allocate -= 1
 
             self.load_specs[request.request_id] = LoadSpec(
