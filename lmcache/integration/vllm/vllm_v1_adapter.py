@@ -778,7 +778,7 @@ class LMCacheConnectorV1Impl:
         for req_id in finished_req_ids:
             print(f"XXX get req_id: {req_id}")
 
-        retrun self.lmcache_engine.get_finished(finished_req_ids)
+        return self.lmcache_engine.get_finished(finished_req_ids)
 
     ###################
     # Scheduler side APIs
