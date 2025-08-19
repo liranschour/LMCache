@@ -996,6 +996,8 @@ class LMCacheConnectorV1Impl:
 
         if params is not None and params.get("do_remote_decode"):
             logger.info(f"XXX mark request as do_remote_prefill")
+            if not return_params:
+                return_params = {}
             return_params["do_remote_prefill"] = True
             return_params["do_remote_decode"] = False
 
