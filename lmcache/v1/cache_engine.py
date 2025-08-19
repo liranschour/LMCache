@@ -350,9 +350,9 @@ class LMCacheEngine:
         logger.debug(f"Stored {tot_token_num} out of total {len(tokens)} tokens")
         yield
 
-        def get_finished(
+    def get_finished(
             self, finished_req_ids: set[str]
-        ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
             if not self._reqs_finished:
                 return None, None
 
