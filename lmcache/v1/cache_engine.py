@@ -362,7 +362,7 @@ class LMCacheEngine:
                 self._reqs_finished.remove(req_id)
                 done_req_ids.add(req_id)
 
-            logger.info(f"XXX retruned finshed reqs: {len(done_req_ids)}"
+            logger.info(f"XXX retruned finshed reqs: {len(done_req_ids)}")
             return None, done_req_ids
 
     def batched_get_done(self, fut, req_id, keys, starts, ends, **kwargs):
@@ -495,7 +495,7 @@ class LMCacheEngine:
 
             if fut is not None:
                 logger.info(f"XXX batched_get() will complete async")
-                self._reqs_async.append(req_id])
+                self._reqs_async.append(req_id)
                 fut.add_done_callback(
                     partial(self.batched_get_done, req_id, keys,
                             start_mapping[location], end_mapping[location], kwargs)
