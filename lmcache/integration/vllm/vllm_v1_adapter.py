@@ -778,7 +778,7 @@ class LMCacheConnectorV1Impl:
         for req_id in finished_req_ids:
             print(f"XXX get req_id: {req_id}")
 
-        return None, None
+        retrun self.lmcache_engine.get_finished(finished_req_ids)
 
     ###################
     # Scheduler side APIs
@@ -806,6 +806,10 @@ class LMCacheConnectorV1Impl:
         print(f"XXX {params}")
         if self.kv_role == "kv_producer":
             return 0, False
+
+        if params is not None and params.get("do_remote_prefill"):
+            logger.info(f"XXX {len(request.prompt_token_ids) - num_computed_tokens}")
+            return (len(request.prompt_token_ids) - num_computed_tokens), True
 
         token_ids = torch.tensor(request.prompt_token_ids)
 
@@ -989,5 +993,10 @@ class LMCacheConnectorV1Impl:
                 "first_tok": request._output_token_ids[0],
                 "TEST_XX" : True,
             }
+
+        if params is not None and params.get("do_remote_decode"):
+            logger.info(f"XXX mark request as do_remote_prefill")
+            return_params["do_remote_prefill"] = True
+            return_params["do_remote_decode"] = False
 
         return 0, return_params

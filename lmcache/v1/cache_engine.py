@@ -146,6 +146,9 @@ class LMCacheEngine:
         InitializeUsageContext(config.to_original_config(), metadata)
         self.stats_monitor = LMCStatsMonitor.GetOrCreate()
 
+        self._reqs_async = []
+        self._reqs_finished = []
+
     @_lmcache_nvtx_annotate
     @torch.inference_mode()
     def store(
@@ -347,7 +350,22 @@ class LMCacheEngine:
         logger.debug(f"Stored {tot_token_num} out of total {len(tokens)} tokens")
         yield
 
-    def on_get_done(self, fut, keys, starts, ends, **kwargs):
+        def get_finished(
+            self, finished_req_ids: set[str]
+        ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+            if not self._reqs_finished:
+                return None, None
+
+            done_req_ids: set[str] = set()
+
+            for req_id in self._reqs_finished:
+                self._reqs_finished.remove(req_id)
+                done_req_ids.add(req_id)
+
+            logger.info(f"XXX retruned finshed reqs: {len(done_req_ids)}"
+            return None, done_req_ids
+
+    def batched_get_done(self, fut, req_id, keys, starts, ends, **kwargs):
         logger.info(f"XXX on_get_done: before result()")
         memory_objs = fut.result()
 
@@ -371,6 +389,10 @@ class LMCacheEngine:
                 self.storage_manager.remove(key)
             else:
                 self.storage_manager.batched_unpin([key])
+
+        assert req_id in self._reqs_async
+        self._reqs_async.remove(req_id)
+        self._reqs_finished.append(req_id)
 
     @_lmcache_nvtx_annotate
     @torch.inference_mode()
@@ -472,8 +494,10 @@ class LMCacheEngine:
             )
 
             if fut is not None:
+                logger.info(f"XXX batched_get() will complete async")
+                self._reqs_async.append(req_id])
                 fut.add_done_callback(
-                    partial(self.on_get_done, keys,
+                    partial(self.batched_get_done, req_id, keys,
                             start_mapping[location], end_mapping[location], kwargs)
                 )
                 # memory_objs = fut.result()
