@@ -774,7 +774,7 @@ class LMCacheConnectorV1Impl:
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
-        print(f"XXX get_finished {len(finished_req_ids)}")
+        #print(f"XXX get_finished {len(finished_req_ids)}")
         for req_id in finished_req_ids:
             print(f"XXX get req_id: {req_id}")
 
