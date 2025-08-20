@@ -905,6 +905,7 @@ class LMCacheConnectorV1Impl:
                 f"{self.load_specs[request.request_id].vllm_cached_tokens}"
                 f" for request {request.request_id}"
             )
+        params = request.kv_transfer_params
         if params is not None and params.get("do_remote_prefill"):
             # Only trigger 1 KV transfer per request.
             params["do_remote_prefill"] = False
