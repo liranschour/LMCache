@@ -924,15 +924,16 @@ class LMCacheConnectorV1Impl:
 
         force_skip_save = self.kv_role == "kv_consumer"
 
-        logger.info(f"XXX {scheduler_output}")
         meta = LMCacheConnectorMetadata()
 
         for finished_req_id in scheduler_output.finished_req_ids:
+            logger.info(f"XXX {scheduler_output}")
             self._request_trackers.pop(finished_req_id, None)
 
         for request in scheduler_output.scheduled_new_reqs:
             # Right now, we only load KV for new requests
             load_spec = self.load_specs.pop(request.req_id, None)
+            logger.info(f"XXX {load_spec}")
             num_tokens_to_compute = (
                 request.num_computed_tokens
                 + scheduler_output.num_scheduled_tokens[request.req_id]
@@ -960,6 +961,7 @@ class LMCacheConnectorV1Impl:
 
         cached_reqs = scheduler_output.scheduled_cached_reqs
         for i, req_id in enumerate(cached_reqs.req_ids):
+            logger.info(f"XXX {req_id}")
             request_tracker = self._request_trackers[req_id]
             num_new_tokens = scheduler_output.num_scheduled_tokens[req_id]
             if request := self._requests_in_step.get(req_id):
