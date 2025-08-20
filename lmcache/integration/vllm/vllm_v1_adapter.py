@@ -813,7 +813,7 @@ class LMCacheConnectorV1Impl:
             if len(request.prompt_token_ids) == request.num_tokens:
                 need_to_allocate -= 1
 
-         logger.info(f"XXX {need_to_allocate}")
+            logger.info(f"XXX {need_to_allocate}")
             self.load_specs[request.request_id] = LoadSpec(
                 vllm_cached_tokens=num_computed_tokens,
                 lmcache_cached_tokens=len(request.prompt_token_ids),
