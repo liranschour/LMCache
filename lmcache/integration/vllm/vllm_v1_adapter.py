@@ -819,7 +819,7 @@ class LMCacheConnectorV1Impl:
                 lmcache_cached_tokens=len(request.prompt_token_ids),
                 can_load=False,
             )
-            return (len(request.prompt_token_ids) - num_computed_tokens), True
+            return (len(request.prompt_token_ids) - num_computed_tokens), False
 
         token_ids = torch.tensor(request.prompt_token_ids)
 
@@ -908,6 +908,7 @@ class LMCacheConnectorV1Impl:
         params = request.kv_transfer_params
         if params is not None and params.get("do_remote_prefill"):
             # Only trigger 1 KV transfer per request.
+            logger.info(f"XXX {request}")
             params["do_remote_prefill"] = False
 
         logger.info(f"XXX {request}")
