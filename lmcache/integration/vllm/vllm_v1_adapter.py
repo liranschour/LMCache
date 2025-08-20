@@ -877,6 +877,7 @@ class LMCacheConnectorV1Impl:
         if the CacheManager this allocated blocks for us.
         """
 
+        logger.info(f"XXX {request}")
         self._requests_in_step[request.request_id] = request
 
         if request.request_id not in self.load_specs:
@@ -923,6 +924,7 @@ class LMCacheConnectorV1Impl:
 
         force_skip_save = self.kv_role == "kv_consumer"
 
+        logger.info(f"XXX {scheduler_output}")
         meta = LMCacheConnectorMetadata()
 
         for finished_req_id in scheduler_output.finished_req_ids:
