@@ -365,6 +365,7 @@ class LMCacheEngine:
             logger.info(f"XXX retruned finshed reqs: {len(done_req_ids)}")
             return None, done_req_ids
 
+    @torch.inference_mode()
     def batched_get_done(self, fut, *, req_id, keys, starts, ends, **kwargs):
         print(fut, req_id, keys, starts, ends, kwargs)
         logger.info(f"XXX on_get_done: before result()")
