@@ -493,7 +493,7 @@ class LMCacheEngine:
             )
 
             if fut is not None:
-                logger.debug(f"XXX async completion for: {req_id}")
+                logger.info(f"XXX async completion for: {req_id}")
                 self._reqs_async.append(req_id)
                 fut.add_done_callback(
                     partial(self.batched_get_done,

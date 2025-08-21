@@ -204,7 +204,6 @@ class LocalCPUBackend(StorageBackendInterface):
             time.sleep(0.001)  # Avoid busy waiting
 
     def insert_transfer(self, req_id, handle, msg_size, start):
-        logger.info(f"XXX insert_transfer: {req_id}, {handle}, {msg_size}")
         with self._transfers_lock:
             self._transfers[req_id] = (handle, threading.Event(), msg_size, start)
 
@@ -212,11 +211,9 @@ class LocalCPUBackend(StorageBackendInterface):
         with self._transfers_lock:
             exist = req_id in self._transfers
 
-        logger.info(f"XXX {req_id} req_is_waiting returned: {exist}")
         return exist
 
     def wait_for_transfer(self, req_id):
-        logger.info(f"XXX wait_for_transfer: {req_id}")
         t_done = None
         with self._transfers_lock:
             if req_id in self._transfers:
@@ -224,7 +221,6 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if t_done:
             t_done.wait()
-        logger.info(f"XXX exit wait_for_transfer: {t_done}")
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
@@ -271,7 +267,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 #request = NixlRequest.deserialize(msg)
 
                 req_id, keys, metadatas = pickle.loads(msg)
-                logger.info(f"XXX Received request {req_id} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                logger.debug(f"XXX Received request {req_id} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 memory_objs = []
                 local_descs_ids = []
@@ -403,7 +399,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 metadatas.append(memory_obj.metadata)
                 pushed_keys.append(key)
             else:
-                print(f"XXX skip not aligned chunk size {memory_obj.get_shape()[2]}")
+                logger.info(f"XXX skip not aligned chunk size {memory_obj.get_shape()[2]}")
             self.submit_put_task(key, memory_obj)
 
         if self._nixl_role == "sender":
@@ -450,9 +446,7 @@ class LocalCPUBackend(StorageBackendInterface):
         if self.req_is_waiting(req_id):
             fut = self._transfer_completion_executor.submit(
                 self._batch_get_async, keys, req_id)
-            #logger.info(f"XXX before result()")
-            #mem_objs = fut.result() # XXX HACK block for now
-            #logger.info(f"XXX after result()")
+
             return None, fut
         else:
             return self._batch_get_blocking(keys, req_id), None
