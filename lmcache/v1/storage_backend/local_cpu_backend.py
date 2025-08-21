@@ -443,6 +443,10 @@ class LocalCPUBackend(StorageBackendInterface):
         keys: List[CacheEngineKey],
         req_id: Optional[str],
     ) -> Tuple[List[MemoryObj], Optional[Future]]:
+        # XXXXXXXXXXXXXXXXXXXX
+        self.wait_for_transfer(req_id)
+        return self._batch_get_blocking(keys, req_id), None
+        # XXXXXXXXXXXXXXXXXXX
         if self.req_is_waiting(req_id):
             fut = self._transfer_completion_executor.submit(
                 self._batch_get_async, keys, req_id)
