@@ -175,7 +175,6 @@ class LMCacheEngine:
         :raises: ValueError if the number of Falses in the mask is not a
             multiple of the chunk size.
         """
-        print(f"XXX store {req_id}")
         if mask is not None:
             num_to_store_tokens = torch.sum(mask).item()
         else:
@@ -362,12 +361,10 @@ class LMCacheEngine:
                 self._reqs_finished.remove(req_id)
                 done_req_ids.add(req_id)
 
-            logger.info(f"XXX retruned finshed reqs: {len(done_req_ids)}")
             return None, done_req_ids
 
     @torch.inference_mode()
     def batched_get_done(self, fut, *, req_id, keys, starts, ends, **kwargs):
-        logger.info(f"XXX on_get_done: before result()")
         memory_objs = fut.result()
 
         # NOTE(Jiayi): memory_obj doesn't have to be a pinned
@@ -377,7 +374,6 @@ class LMCacheEngine:
         self.gpu_connector.batched_to_gpu(
             memory_objs, starts, ends, **kwargs
         )
-        logger.info(f"XXX on_get_done: after batched_to_gpu")
 
         # TODO(Jiayi): Remove the following for loop with batched operations
         for key, memory_obj in zip(keys, memory_objs, strict=False):
@@ -390,6 +386,8 @@ class LMCacheEngine:
                 self.storage_manager.remove(key)
             else:
                 self.storage_manager.batched_unpin([key])
+
+        logger.info(f"on_get_done: finsihed {req_id}")
 
         assert req_id in self._reqs_async
         self._reqs_async.remove(req_id)
@@ -432,7 +430,7 @@ class LMCacheEngine:
         monitor_req_id = self.stats_monitor.on_retrieve_request(num_required_tokens)
 
         ret_mask = torch.zeros_like(tokens, dtype=torch.bool, device="cpu")
-        logger.info(f"XXX {req_id}")
+
         key_mapping: Dict[str, List[CacheEngineKey]] = {}
         start_mapping: Dict[str, List[int]] = {}
         end_mapping: Dict[str, List[int]] = {}
@@ -495,7 +493,7 @@ class LMCacheEngine:
             )
 
             if fut is not None:
-                logger.info(f"XXX batched_get() will complete async")
+                logger.debug(f"XXX async completion for: {req_id}")
                 self._reqs_async.append(req_id)
                 fut.add_done_callback(
                     partial(self.batched_get_done,

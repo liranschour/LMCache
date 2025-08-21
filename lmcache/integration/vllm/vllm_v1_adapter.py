@@ -494,7 +494,7 @@ class LMCacheConnectorV1Impl:
 
         attn_metadata = forward_context.attn_metadata
         if attn_metadata is None:
-            #XXXlogger.warning("In connector.start_load_kv, but the attn_metadata is None")
+            logger.warning("In connector.start_load_kv, but the attn_metadata is None")
             return
 
         assert self.lmcache_engine is not None
@@ -546,7 +546,6 @@ class LMCacheConnectorV1Impl:
                     next(layerwise_retriever)
                     self.layerwise_retrievers.append(layerwise_retriever)
             else:
-                print(f"XXX Before retrieve req_id={request.req_id}")
                 ret_token_mask, is_async = self.lmcache_engine.retrieve(
                     request.req_id,
                     tokens[:lmcache_cached_tokens],
@@ -774,10 +773,6 @@ class LMCacheConnectorV1Impl:
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
-        #print(f"XXX get_finished {len(finished_req_ids)}")
-        for req_id in finished_req_ids:
-            print(f"XXX get req_id: {req_id}")
-
         return self.lmcache_engine.get_finished(finished_req_ids)
 
     ###################
@@ -803,7 +798,7 @@ class LMCacheConnectorV1Impl:
             external KV cache beyond what is already computed.
         """
         params = request.kv_transfer_params
-        print(f"XXX {params}")
+
         if self.kv_role == "kv_producer":
             return 0, False
 
@@ -813,13 +808,12 @@ class LMCacheConnectorV1Impl:
             if len(request.prompt_token_ids) == request.num_tokens:
                 need_to_allocate -= 1
 
-            logger.info(f"XXX {need_to_allocate}")
             self.load_specs[request.request_id] = LoadSpec(
                 vllm_cached_tokens=num_computed_tokens,
                 lmcache_cached_tokens=len(request.prompt_token_ids),
                 can_load=False,
             )
-            return need_to_allocate, False
+            return need_to_allocate, False # XXX change to async
 
         token_ids = torch.tensor(request.prompt_token_ids)
 
@@ -877,7 +871,6 @@ class LMCacheConnectorV1Impl:
         if the CacheManager this allocated blocks for us.
         """
 
-        logger.info(f"XXX {request}")
         self._requests_in_step[request.request_id] = request
 
         if request.request_id not in self.load_specs:
@@ -908,10 +901,8 @@ class LMCacheConnectorV1Impl:
         params = request.kv_transfer_params
         if params is not None and params.get("do_remote_prefill"):
             # Only trigger 1 KV transfer per request.
-            logger.info(f"XXX {request}")
             params["do_remote_prefill"] = False
 
-        logger.info(f"XXX {request}")
         self.load_specs[request.request_id].can_load = True
 
     @_lmcache_nvtx_annotate
@@ -933,13 +924,11 @@ class LMCacheConnectorV1Impl:
         meta = LMCacheConnectorMetadata()
 
         for finished_req_id in scheduler_output.finished_req_ids:
-            logger.info(f"XXX {scheduler_output}")
             self._request_trackers.pop(finished_req_id, None)
 
         for request in scheduler_output.scheduled_new_reqs:
             # Right now, we only load KV for new requests
             load_spec = self.load_specs.pop(request.req_id, None)
-            logger.info(f"XXX {load_spec}")
             num_tokens_to_compute = (
                 request.num_computed_tokens
                 + scheduler_output.num_scheduled_tokens[request.req_id]
@@ -967,7 +956,6 @@ class LMCacheConnectorV1Impl:
 
         cached_reqs = scheduler_output.scheduled_cached_reqs
         for i, req_id in enumerate(cached_reqs.req_ids):
-            logger.info(f"XXX {req_id}")
             request_tracker = self._request_trackers[req_id]
             num_new_tokens = scheduler_output.num_scheduled_tokens[req_id]
             if request := self._requests_in_step.get(req_id):
@@ -1005,7 +993,6 @@ class LMCacheConnectorV1Impl:
         params = request.kv_transfer_params
         return_params = None
 
-        print(f"XXX request_finished {request.request_id} len blocks ids={len(block_ids)}")
         # NOTE: Used to stream back the first token
         # for disagg prefill
         if params is not None and "ret_first_tok" in params:
