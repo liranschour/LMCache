@@ -22,6 +22,7 @@ from typing import (
     List,
     Optional,
     Sequence,
+    Tuple,
 )
 import asyncio
 import threading
@@ -165,6 +166,7 @@ class StorageManager:
 
     def batched_put(
         self,
+        req_id: str,
         keys: Sequence[CacheEngineKey],
         memory_objs: List[MemoryObj],
     ) -> None:
@@ -182,7 +184,7 @@ class StorageManager:
         for backend in self.storage_backends.values():
             # NOTE: the handling of exists_in_put_tasks
             # is done in the backend
-            backend.batched_submit_put_task(keys, memory_objs)
+            backend.batched_submit_put_task(req_id, keys, memory_objs)
 
         for memory_obj in memory_objs:
             memory_obj.ref_count_down()
@@ -240,13 +242,15 @@ class StorageManager:
         self,
         keys: List[CacheEngineKey],
         storage_backend_name: str,
-    ) -> List[MemoryObj]:
+        req_id: str,
+    ) -> Tuple[List[MemoryObj], Optional[Future]]:
         """
         Non-blocking function to get the memory objects from the storages.
         """
         storage_backend = self.storage_backends[storage_backend_name]
-        memory_objs = storage_backend.batched_get_blocking(keys)
-        return memory_objs
+        memory_objs, fut = storage_backend.batched_get_blocking(keys, req_id)
+
+        return memory_objs, fut
 
     def layerwise_batched_get(
         self,

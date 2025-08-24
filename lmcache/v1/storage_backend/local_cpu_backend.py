@@ -14,8 +14,8 @@
 
 # Standard
 from collections import OrderedDict
-from concurrent.futures import Future
-from typing import TYPE_CHECKING, List, Optional
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import TYPE_CHECKING, List, Optional, Tuple
 import threading
 
 # Third Party
@@ -187,6 +187,9 @@ class LocalCPUBackend(StorageBackendInterface):
             )
             self._sender_id = None
             self._receiver_thread.start()
+            self._transfer_completion_executor = ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="vllm-nixl-txn-completion")
 
         # NIXL_PUSH_END
 
@@ -218,10 +221,10 @@ class LocalCPUBackend(StorageBackendInterface):
     def _recv_transfers_loop(self):
         while self._running:
 
-            remove_handles = []
+            finished_transfer = []
             if self._nixl_operation == "READ":
                 with self._transfers_lock:
-                    for handle, (t_done, msg_size, start) in self._transfers.items():
+                for req_id, (handle, t_done, msg_size, start) in self._transfers.items():
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -233,11 +236,11 @@ class LocalCPUBackend(StorageBackendInterface):
 
                             self._agent.release_xfer_handle(handle)
                             t_done.set()
-                            remove_handles.append(handle)
+                            finished_transfer.append(req_id)
 
-                    for handle in remove_handles:
-                        assert handle in self._transfers
-                        del self._transfers[handle]
+                    for req_id in finished_transfer:
+                        assert req_id in self._transfers
+                        del self._transfers[req_id]
             else:
                 # WRITE
                 all_notifs = self._agent.get_new_notifs().values() # XXX the code assumes a single peer for now
@@ -258,16 +261,22 @@ class LocalCPUBackend(StorageBackendInterface):
 
             time.sleep(0.001)  # Avoid busy waiting
 
-    def insert_transfer(self, handle, msg_size, start):
+    def insert_transfer(self, req_id, handle, msg_size, start):
         with self._transfers_lock:
-            self._transfers[handle] = (threading.Event(), msg_size, start)
+            self._transfers[req_id] = (handle, threading.Event(), msg_size, start)
 
-    def wait_for_transfer(self, handle):
+    def req_is_waiting(self, req_id) -> bool:
+        with self._transfers_lock:
+            exist = req_id in self._transfers
+
+        return exist
+
+    def wait_for_transfer(self, req_id):
         t_done = None
 
         with self._transfers_lock:
-            if handle in self._transfers:
-                t_done = self._transfers[handle][0]
+            if req_id in self._transfers:
+                _, t_done, *_ = self._transfers[req_id]
 
         logger.debug(f"XXX wait_for {handle} {t_done}")
         if t_done:
@@ -323,8 +332,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 #request = NixlRequest.deserialize(msg)
 
-                keys, metadatas, nixl_operation = pickle.loads(msg)
-                logger.debug(f"XXX Received request for NIXL {nixl_operation} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                req_id, keys, metadatas, nixl_operation = pickle.loads(msg)
+                logger.debug(f"XXX Received request {req_id} for NIXL {nixl_operation} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 l_metadatas = []
                 memory_objs = []
@@ -364,10 +373,10 @@ class LocalCPUBackend(StorageBackendInterface):
                     )
 
                     for mem_obj in memory_objs:
-                        mem_obj.metadata.handle = handle
+                        mem_obj.metadata.handle = req_id
 
                     # Begin async xfer.
-                    self.insert_transfer(handle, total_size, start)
+                    self.insert_transfer(req_id, handle, total_size, start)
 
                     self._agent.transfer(handle)
                     self.batched_submit_put_task(keys, memory_objs)
@@ -458,6 +467,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
     def batched_submit_put_task(
         self,
+        req_id: str,
         keys: List[CacheEngineKey],
         memory_objs: List[MemoryObj],
     ) -> Optional[List[Future]]:
@@ -482,7 +492,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if self._nixl_role == "sender":
             # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-            message = (pushed_keys, metadatas, self._nixl_operation)
+            message = (req_id, pushed_keys, metadatas, self._nixl_operation)
+            assert req_id is not None
+
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
@@ -562,9 +574,45 @@ class LocalCPUBackend(StorageBackendInterface):
     ) -> Optional[Future]:
         return None
 
+    def _batch_get_async(
+            self,
+            keys: List[CacheEngineKey],
+            req_id: str,
+    ) -> List[MemoryObj]:
+        self.wait_for_transfer(req_id)
+        return self._batch_get_blocking(keys, req_id) # XXX HACK remove me
+
+    def batched_get_blocking(
+        self,
+        keys: List[CacheEngineKey],
+        req_id: Optional[str],
+    ) -> Tuple[List[MemoryObj], Optional[Future]]:
+        # XXXXXXXXXXXXXXXXXXXX
+        self.wait_for_transfer(req_id)
+        return self._batch_get_blocking(keys, req_id), None
+        # XXXXXXXXXXXXXXXXXXX
+        if self.req_is_waiting(req_id):
+            fut = self._transfer_completion_executor.submit(
+                self._batch_get_async, keys, req_id)
+
+            return None, fut
+        else:
+            return self._batch_get_blocking(keys, req_id), None
+
+    def _batch_get_blocking(
+            self,
+            keys: List[CacheEngineKey],
+            req_id: Optional[str],
+    ) -> List[MemoryObj]:
+        mem_objs = []
+        for key in keys:
+            mem_objs.append(self.get_blocking(key, req_id))
+        return mem_objs
+
     def get_blocking(
         self,
         key: CacheEngineKey,
+        req_id: Optional[str],
     ) -> Optional[MemoryObj]:
         with self.cpu_lock:
             if key not in self.hot_cache:
@@ -576,6 +624,7 @@ class LocalCPUBackend(StorageBackendInterface):
             memory_obj.ref_count_up()
 
             handle = memory_obj.metadata.handle
+            assert req_id == handle
             if handle is not None:
                 self.wait_for_transfer(handle)
                 memory_obj.metadata.handle = None

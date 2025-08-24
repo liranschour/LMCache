@@ -14,7 +14,7 @@
 
 # Standard
 from concurrent.futures import Future
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import abc
 
 # Third Party
@@ -71,7 +71,7 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
     # have more flexibility to do optimizations.
     @abc.abstractmethod
     def batched_submit_put_task(
-        self, keys: List[CacheEngineKey], objs: List[MemoryObj]
+        self, req_id: Optional[str], keys: List[CacheEngineKey], objs: List[MemoryObj]
     ) -> Optional[List[Future]]:
         """
         An async function to put the MemoryObj into the storage backend.
@@ -101,6 +101,7 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
     def get_blocking(
         self,
         key: CacheEngineKey,
+        req_id: Optional[str],
     ) -> Optional[MemoryObj]:
         """
         A blocking function to get the kv cache from the storage backend.
@@ -130,7 +131,8 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
     def batched_get_blocking(
         self,
         keys: List[CacheEngineKey],
-    ) -> List[MemoryObj]:
+        req_id: Optional[str],
+    ) -> Tuple[List[MemoryObj], Optional[Future]]:
         """
         A blcocking function to get the kv cache from the storage backend.
 
@@ -138,10 +140,11 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
 
         :return: a list of memory objects.
         """
+
         mem_objs = []
         for key in keys:
-            mem_objs.append(self.get_blocking(key))
-        return mem_objs
+            mem_objs.append(self.get_blocking(key, req_id))
+        return mem_objs, None
 
     @abc.abstractmethod
     def pin(

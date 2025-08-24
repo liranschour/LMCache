@@ -13,10 +13,11 @@
 # limitations under the License.
 
 # Standard
-from typing import Dict, Generator, List, Optional, Union
+from typing import Dict, Generator, List, Optional, Union, Tuple
 import asyncio
 import multiprocessing
 import time
+from functools import partial
 
 # Third Party
 import torch
@@ -145,10 +146,14 @@ class LMCacheEngine:
         InitializeUsageContext(config.to_original_config(), metadata)
         self.stats_monitor = LMCStatsMonitor.GetOrCreate()
 
+        self._reqs_async = []
+        self._reqs_finished = []
+
     @_lmcache_nvtx_annotate
     @torch.inference_mode()
     def store(
         self,
+        req_id,
         tokens: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         **kwargs,
@@ -170,7 +175,6 @@ class LMCacheEngine:
         :raises: ValueError if the number of Falses in the mask is not a
             multiple of the chunk size.
         """
-
         if mask is not None:
             num_to_store_tokens = torch.sum(mask).item()
         else:
@@ -215,7 +219,7 @@ class LMCacheEngine:
         offload_time += time.perf_counter() - t
 
         t = time.perf_counter()
-        self.storage_manager.batched_put(keys, memory_objs)
+        self.storage_manager.batched_put(req_id, keys, memory_objs)
         put_time += time.perf_counter() - t
 
         tot_time = offload_time + put_time
@@ -345,14 +349,59 @@ class LMCacheEngine:
         logger.debug(f"Stored {tot_token_num} out of total {len(tokens)} tokens")
         yield
 
+    def get_finished(
+            self, finished_req_ids: set[str]
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+            if not self._reqs_finished:
+                return None, None
+
+            done_req_ids: set[str] = set()
+
+            for req_id in self._reqs_finished:
+                self._reqs_finished.remove(req_id)
+                done_req_ids.add(req_id)
+
+            return None, done_req_ids
+
+    @torch.inference_mode()
+    def batched_get_done(self, fut, *, req_id, keys, starts, ends, **kwargs):
+        memory_objs = fut.result()
+
+        # NOTE(Jiayi): memory_obj doesn't have to be a pinned
+        # cpu tensor for the sake of performance.
+        # For example, disk->gpu is faster than disk->cpu->gpu.
+        # RDMA is another example.
+        self.gpu_connector.batched_to_gpu(
+            memory_objs, starts, ends, **kwargs
+        )
+
+        # TODO(Jiayi): Remove the following for loop with batched operations
+        for key, memory_obj in zip(keys, memory_objs, strict=False):
+            memory_obj.ref_count_down()
+
+            # NOTE (ApostaC): This is only for the current implementation:
+            # When the object is retrieved back to vLLM, the storage backend
+            # will immediately remove the object from itself
+            if self.remove_after_retrieve:
+                self.storage_manager.remove(key)
+            else:
+                self.storage_manager.batched_unpin([key])
+
+        logger.info(f"on_get_done: finsihed {req_id}")
+
+        assert req_id in self._reqs_async
+        self._reqs_async.remove(req_id)
+        self._reqs_finished.append(req_id)
+
     @_lmcache_nvtx_annotate
     @torch.inference_mode()
     def retrieve(
         self,
+        req_id,
         tokens: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, bool]:
         """Retrieve the KV caches from the cache engine. And put the retrieved
         KV cache to the serving engine via the GPU connector.
 
@@ -437,10 +486,26 @@ class LMCacheEngine:
         # TODO(Jiayi): We can parallelize the retrieval from
         # different storage backends.
         for location, keys in key_mapping.items():
-            memory_objs = self.storage_manager.batched_get(
+            memory_objs, fut = self.storage_manager.batched_get(
                 keys=keys,
                 storage_backend_name=location,
+                req_id=req_id,
             )
+
+            if fut is not None:
+                logger.info(f"XXX async completion for: {req_id}")
+                self._reqs_async.append(req_id)
+                fut.add_done_callback(
+                    partial(self.batched_get_done,
+                            req_id=req_id,
+                            keys=keys,
+                            starts=start_mapping[location],
+                            ends=end_mapping[location],
+                            **kwargs)
+                )
+                # memory_objs = fut.result()
+                return None, True
+
             reordered_memory_objs.extend(memory_objs)
             reordered_keys.extend(keys)
             reordered_starts.extend(start_mapping[location])
@@ -473,7 +538,7 @@ class LMCacheEngine:
             f"out of {num_required_tokens} "
             f"out of total {len(tokens)} tokens"
         )
-        return ret_mask
+        return ret_mask, False
 
     @_lmcache_nvtx_annotate
     @torch.inference_mode()
