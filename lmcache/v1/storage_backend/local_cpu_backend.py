@@ -196,10 +196,10 @@ class LocalCPUBackend(StorageBackendInterface):
     def _send_transfers_loop(self):
         while self._running:
 
-            remove_handles = []
+            finished_transfer = []
             if self._nixl_operation == "WRITE":
                 with self._transfers_lock:
-                    for handle, (t_done, msg_size, start) in self._transfers.items(): # XXX temp - need to use get_finished() here
+                    for req_id, (handle, t_done, msg_size, start) in self._transfers.items(): # XXX temp - need to use get_finished() here
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -210,11 +210,11 @@ class LocalCPUBackend(StorageBackendInterface):
                             logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
 
                             self._agent.release_xfer_handle(handle)
-                            remove_handles.append(handle)
+                            finished_transfer.append(req_id)
 
-                    for handle in remove_handles:
-                        assert handle in self._transfers
-                        del self._transfers[handle]
+                    for req_id in finished_transfer:
+                        assert req_id in self._transfers
+                        del self._transfers[req_id]
 
             time.sleep(0.001)  # Avoid busy waitingsleep
 
@@ -224,7 +224,7 @@ class LocalCPUBackend(StorageBackendInterface):
             finished_transfer = []
             if self._nixl_operation == "READ":
                 with self._transfers_lock:
-                for req_id, (handle, t_done, msg_size, start) in self._transfers.items():
+                    for req_id, (handle, t_done, msg_size, start) in self._transfers.items():
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -278,10 +278,10 @@ class LocalCPUBackend(StorageBackendInterface):
             if req_id in self._transfers:
                 _, t_done, *_ = self._transfers[req_id]
 
-        logger.debug(f"XXX wait_for {handle} {t_done}")
+        logger.debug(f"XXX wait_for {req_id} {t_done}")
         if t_done:
             t_done.wait()
-        logger.debug(f"XXX wait_for completed {handle}")
+        logger.debug(f"XXX wait_for completed {req_id}")
 
     def _receiver_loop(self):
         poller = zmq.Poller()  # type: ignore
@@ -379,7 +379,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     self.insert_transfer(req_id, handle, total_size, start)
 
                     self._agent.transfer(handle)
-                    self.batched_submit_put_task(keys, memory_objs)
+                    self.batched_submit_put_task(req_id, keys, memory_objs)
 
                     for memory_obj in memory_objs:
                         memory_obj.ref_count_down()
@@ -387,12 +387,12 @@ class LocalCPUBackend(StorageBackendInterface):
                     handle = str(uuid.uuid4())
 
                     for mem_obj in memory_objs:
-                        mem_obj.metadata.handle = handle
+                        mem_obj.metadata.handle = req_id
 
                     start = time.perf_counter()
-                    self.insert_transfer(handle, total_size, start)
+                    self.insert_transfer(req_id, handle, total_size, start)
 
-                    self.batched_submit_put_task(keys, memory_objs)
+                    self.batched_submit_put_task(req_id, keys, memory_objs)
 
                     message = (l_metadatas, handle)
                     data = pickle.dumps(message)
@@ -536,7 +536,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 # XXX TODO: Increase reference count of memory objects till transfer is completed
 
-                self.insert_transfer(handle, total_size, start)
+                self.insert_transfer(req_id, handle, total_size, start)
 
                 # Begin async xfer.
                 self._agent.transfer(handle)
