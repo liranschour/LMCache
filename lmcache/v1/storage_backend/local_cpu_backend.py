@@ -280,6 +280,7 @@ class LocalCPUBackend(StorageBackendInterface):
             time.sleep(0.001)  # Avoid busy waiting
 
     def insert_transfer(self, req_id, handle, msg_size, start):
+        print(f"XXX insert {handle}")
         with self._transfers_lock:
             self._transfers[req_id] = (handle, threading.Event(), msg_size, start)
 
@@ -541,7 +542,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 # Prepare transfer with Nixl.
                 start = time.perf_counter()
-
+                print(f"XXXX {msg_id}")
+                msg_id = msg_id.encode()
+                print(f"XXXX {msg_id}")
                 handle = self._agent.make_prepped_xfer(
                     "WRITE",
                     self.src_xfer_side_handle,
