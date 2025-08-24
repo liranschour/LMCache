@@ -330,12 +330,14 @@ class LocalCPUBackend(StorageBackendInterface):
                 memory_objs = []
                 local_descs_ids = []
                 remote_descs_ids = []
+                total_size = 0
                 for key, meta in zip(keys, metadatas, strict=False):
                     mem_obj = self.allocate(meta.shape, meta.dtype)
                     memory_objs.append(mem_obj)
                     l_metadatas.append(mem_obj.metadata)
 
                     assert meta.phy_size % self._nixl_block_size == 0
+                    total_size += meta.phy_size
                     num_blocks = meta.phy_size // self._nixl_block_size
                     assert mem_obj.metadata.address % self._nixl_block_size == 0
                     local_base_block_id = mem_obj.metadata.address // self._nixl_block_size
@@ -365,7 +367,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         mem_obj.metadata.handle = handle
 
                     # Begin async xfer.
-                    self.insert_transfer(handle, (len(local_descs_ids) * self._nixl_block_size), start)
+                    self.insert_transfer(handle, total_size, start)
 
                     self._agent.transfer(handle)
                     self.batched_submit_put_task(keys, memory_objs)
@@ -374,14 +376,13 @@ class LocalCPUBackend(StorageBackendInterface):
                         memory_obj.ref_count_down()
                 else: # WRITE
                     handle = str(uuid.uuid4())
-                    t_len = 0
 
                     for mem_obj in memory_objs:
                         mem_obj.metadata.handle = handle
                         t_len += mem_obj.metadata.phy_size
 
                     start = time.perf_counter()
-                    self.insert_transfer(handle, t_len, start)
+                    self.insert_transfer(handle, total_size, start)
 
                     self.batched_submit_put_task(keys, memory_objs)
 
@@ -496,9 +497,11 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 local_descs_ids = []
                 remote_descs_ids = []
+                total_size = 0
                 for l_meta, r_meta in zip(metadatas, r_metadatas, strict=False):
                     assert r_meta.phy_size % self._nixl_block_size == 0
                     num_blocks = r_meta.phy_size // self._nixl_block_size
+                    total_size += r_meta.phy_size
 
                     local_base_block_id = l_meta.address // self._nixl_block_size
                     remote_base_block_id = r_meta.address // self._nixl_block_size
@@ -522,7 +525,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 # XXX TODO: Increase reference count of memory objects till transfer is completed
 
-                self.insert_transfer(handle, (len(local_descs_ids) * self._nixl_block_size), start)
+                self.insert_transfer(handle, total_size, start)
 
                 # Begin async xfer.
                 self._agent.transfer(handle)
