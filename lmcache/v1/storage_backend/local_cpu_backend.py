@@ -245,7 +245,7 @@ class LocalCPUBackend(StorageBackendInterface):
                 # WRITE
                 with self._transfers_lock:
                     for req_id, (handle, t_done, msg_size, start) in self._transfers.items():
-                        state = self._agent.check_remote_xfer_state(self.peer_name, handle.encode())
+                        state = self._agent.check_remote_xfer_done(self.peer_name, handle.encode())
 
                         if state == "ERR":
                             print("Transfer got to Error state.")
