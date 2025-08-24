@@ -379,7 +379,6 @@ class LocalCPUBackend(StorageBackendInterface):
 
                     for mem_obj in memory_objs:
                         mem_obj.metadata.handle = handle
-                        t_len += mem_obj.metadata.phy_size
 
                     start = time.perf_counter()
                     self.insert_transfer(handle, total_size, start)
