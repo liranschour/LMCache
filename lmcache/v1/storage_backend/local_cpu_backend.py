@@ -243,21 +243,39 @@ class LocalCPUBackend(StorageBackendInterface):
                         del self._transfers[req_id]
             else:
                 # WRITE
-                all_notifs = self._agent.get_new_notifs().values() # XXX the code assumes a single peer for now
-                for notifs in all_notifs:
-                    for notif in notifs:
-                        handle = notif.decode("utf-8")
+                with self._transfers_lock:
+                    for req_id, (handle, t_done, msg_size, start) in self._transfers.items():
+                        state = self._agent.check_remote_xfer_state(self.peer_name, handle.encode())
 
-                        value = None
-                        with self._transfers_lock:
-                            value = self._transfers.pop(handle, None)
-
-                        if value is not None:
-                            t_done, msg_size, start = value
+                        if state == "ERR":
+                            print("Transfer got to Error state.")
+                            exit()
+                        elif state == "DONE":
                             end = time.perf_counter()
                             logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
 
                             t_done.set()
+                            finished_transfer.append(req_id)
+
+                    for req_id in finished_transfer:
+                        assert req_id in self._transfers
+                        del self._transfers[req_id]
+
+                # all_notifs = self._agent.get_new_notifs().values() # XXX the code assumes a single peer for now
+                # for notifs in all_notifs:
+                #     for notif in notifs:
+                #         handle = notif.decode("utf-8")
+
+                #         value = None
+                #         with self._transfers_lock:
+                #             value = self._transfers.pop(handle, None)
+
+                #         if value is not None:
+                #             t_done, msg_size, start = value
+                #             end = time.perf_counter()
+                #             logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
+
+                #             t_done.set()
 
             time.sleep(0.001)  # Avoid busy waiting
 
