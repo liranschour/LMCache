@@ -1,0 +1,13 @@
+local_cpu: True
+max_local_cpu_size: 25.0
+#local_disk: 
+max_local_disk_size: 0
+remote_serde: NULL
+
+enable_nixl: False
+nixl_role: "sender"
+nixl_peer_host: "10.128.4.180"
+nixl_peer_port: 55555
+nixl_buffer_size: 1073741824 # 1GB
+nixl_buffer_device: "cuda"
+nixl_enable_gc: True
