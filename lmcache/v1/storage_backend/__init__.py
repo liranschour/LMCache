@@ -70,6 +70,7 @@ def CreateStorageBackends(
     # other backends might need it as a buffer.
     local_cpu_backend = LocalCPUBackend(
         config,
+        metadata,
         memory_allocator,
         lookup_server,
         lmcache_worker,

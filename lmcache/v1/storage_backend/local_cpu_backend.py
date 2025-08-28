@@ -27,6 +27,7 @@ from lmcache.observability import LMCStatsMonitor
 from lmcache.utils import CacheEngineKey, _lmcache_nvtx_annotate
 from lmcache.v1.cache_controller.message import KVAdmitMsg, KVEvictMsg
 from lmcache.v1.config import LMCacheEngineConfig
+from lmcache.config import LMCacheEngineMetadata
 from lmcache.v1.lookup_server import LookupServerInterface
 from lmcache.v1.memory_management import (
     MemoryAllocatorInterface,
@@ -65,6 +66,7 @@ class LocalCPUBackend(StorageBackendInterface):
     def __init__(
         self,
         config: LMCacheEngineConfig,
+        metadata: LMCacheEngineMetadata,
         memory_allocator: MemoryAllocatorInterface,
         lookup_server: Optional[LookupServerInterface] = None,
         lmcache_worker: Optional["LMCacheWorker"] = None,
@@ -87,6 +89,11 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # NIXL_PUSH_START
 
+        self.vllm_block_size = metadata.vllm_block_size
+        self._use_flashinfer = metadata.use_flashinfer
+        self.use_mla = metadata.use_mla
+        self.tp_rank = metadata.tp_rank
+
         # HACK static calculation of token size in bytes
         shape = (2, 32, 1, 1024)
         dtype = torch.bfloat16
@@ -101,6 +108,10 @@ class LocalCPUBackend(StorageBackendInterface):
         )
 
         self._agent = nixl_agent(config.nixl_role)
+        self._agent_gpu = nixl_agent("GPU")
+        self.engine_id = metadata.engine_id
+        self.kv_caches_base_addr: dict[str, list[int]] = {}
+
         self._nixl_role = config.nixl_role
         self._nixl_operation = config.nixl_operation
 
@@ -189,6 +200,105 @@ class LocalCPUBackend(StorageBackendInterface):
             self._receiver_thread.start()
 
         # NIXL_PUSH_END
+
+    def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
+        """Register the KV Cache data in nixl."""
+
+        _, first_kv_cache = next(iter(kv_caches.items()))
+        kv_elem_size = first_kv_cache.element_size()
+
+        if self._use_flashinfer:
+            # FlashInfer swaps 2<->num_blocks dimensions.
+            self.num_blocks = first_kv_cache.shape[0]
+            block_rank = 4  # [2, block_size, kv_heads, head_dim]
+        else:
+            self.num_blocks = first_kv_cache.shape[1]
+            block_rank = 3  # [block_size, kv_heads, head_dim]
+        block_shape = first_kv_cache.shape[-block_rank:]
+        block_size, n_kv_heads, head_dim = block_shape[-3:]
+        # head size in bytes.
+        self.slot_size_bytes = kv_elem_size * n_kv_heads * head_dim
+        assert block_size == self.vllm_block_size
+        # TODO(tms): self.block_len needs to be per-layer for sliding window,
+        # hybrid attn, etc
+        # block size in bytes
+        self.block_len = kv_elem_size * math.prod(block_shape)
+        logger.info(
+            "XXXXX Registering KV_Caches: use_mla: %s, num_blocks: %s, "
+            "block_shape: %s, per_layer_kv_cache_shape: %s", self.use_mla,
+            self.num_blocks, block_shape, first_kv_cache.shape)
+
+        self.kv_caches = kv_caches
+        kv_caches_base_addr = []
+        caches_data = []
+
+        # Note(tms): I modified this from the original region setup code.
+        # K and V are now in different regions. Advantage is that we can
+        # elegantly support MLA and any cases where the K and V tensors
+        # are non-contiguous (it's not locally guaranteed that they will be)
+        # Disadvantage is that the encoded NixlAgentMetadata is now larger
+        # (roughly 8KB vs 5KB).
+        # Conversely for FlashInfer, K and V are transferred in the same tensor
+        # to better exploit the memory layout (ie num_blocks is the first dim).
+        for cache_or_caches in kv_caches.values():
+            # Normalize to always be a list of caches
+            cache_list = [cache_or_caches] if self.use_mla or self._use_flashinfer \
+                else cache_or_caches
+            for cache in cache_list:
+                base_addr = cache.data_ptr()
+                region_len = self.num_blocks * self.block_len
+                caches_data.append(
+                    (base_addr, region_len, cache.device.index, ""))
+                kv_caches_base_addr.append(base_addr)
+        self.kv_caches_base_addr[self.engine_id] = kv_caches_base_addr
+        self.num_regions = len(caches_data)
+        self.num_layers = len(self.kv_caches.keys())
+
+        # TODO(mgoin): remove this once we have hybrid memory allocator
+        # Optimization for models with local attention (Llama 4)
+        # if self.vllm_config.model_config.hf_config.model_type == "llama4":
+        #     from transformers import Llama4TextConfig
+        #     assert isinstance(self.vllm_config.model_config.hf_text_config,
+        #                       Llama4TextConfig)
+        #     llama4_config = self.vllm_config.model_config.hf_text_config
+        #     no_rope_layers = llama4_config.no_rope_layers
+        #     chunk_size = llama4_config.attention_chunk_size
+        #     chunk_block_size = math.ceil(chunk_size / self.vllm_block_size)
+        #     for layer_idx in range(self.num_layers):
+        #         # no_rope_layers[layer_idx] == 0 means NoPE (global)
+        #         # Any other value means RoPE (local chunked)
+        #         is_local_attention = no_rope_layers[layer_idx] != 0
+        #         block_window = chunk_block_size if is_local_attention else None
+        #         self.block_window_per_layer.append(block_window)
+        #     logger.debug("Llama 4 block window per layer mapping: %s",
+        #                  self.block_window_per_layer)
+        #     assert len(self.block_window_per_layer) == self.num_layers
+
+        descs = self._agent_gpu.get_reg_descs(caches_data, "VRAM")
+        logger.info("XXX Registering descs: %s", caches_data)
+        self._agent_gpu.register_memory(descs)
+        logger.info("XXX Done registering descs")
+
+        # Register local/src descr for NIXL xfer.
+        blocks_data = []
+        for base_addr in self.kv_caches_base_addr[self.engine_id]:
+            # NOTE With heter-TP, more blocks are prepared than what are
+            # needed as self.num_blocks >= nixl_agent_meta.num_blocks. We
+            # could create fewer, but then _get_block_descs_ids needs to
+            # select agent_meta.num_blocks instead of self.num_blocks for
+            # local descr, and that makes handling regular flow less clean.
+            for block_id in range(self.num_blocks):
+                block_offset = block_id * self.block_len
+                addr = base_addr + block_offset
+                # (addr, len, device id)
+                blocks_data.append((addr, self.block_len, self.tp_rank))
+        logger.debug("Created %s blocks for src engine %s and rank %s",
+                     len(blocks_data), self.engine_id, self.tp_rank)
+
+        descs = self._agent_gpu.get_xfer_descs(blocks_data, "VRAM")
+        # NIXL_INIT_AGENT to be used for preparations of local descs.
+        self.gpu_xfer_side_handle = self._agent_gpu.prep_xfer_dlist(
+            "NIXL_INIT_AGENT", descs)
 
     def _send_transfers_loop(self):
         while self._running:

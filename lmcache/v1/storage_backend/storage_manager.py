@@ -454,3 +454,7 @@ class StorageManager:
             self.thread.join()
 
         logger.info("Storage manager closed.")
+
+    def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
+        for backend in self.storage_backends.values():
+            backend.register_kv_caches(kv_caches)

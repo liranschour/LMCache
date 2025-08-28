@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 # Third Party
 from vllm.attention import AttentionMetadata
+from vllm.attention.selector import backend_name_to_enum, get_attn_backend
+from vllm.platforms import _Backend
 
 # from vllm.attention.backends.flash_attn import FlashAttentionMetadata
 try:
@@ -50,6 +52,9 @@ from vllm.config import (
 )
 from vllm.sequence import IntermediateTensors
 from vllm.utils import cdiv, get_kv_cache_torch_dtype, round_down
+from vllm.distributed.parallel_state import (
+    get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size,
+    get_tp_group)
 
 # First Party
 from lmcache.config import LMCacheEngineMetadata
@@ -111,6 +116,7 @@ def init_lmcache_engine(
     parallel_config: ParallelConfig,
     cache_config: CacheConfig,
     scheduler_config: SchedulerConfig,
+    engine_id: str,
 ) -> Optional[LMCacheEngine]:
     """Initialize the LMCache engine by the given model config and parallel
     config. This function will check the environment variable
@@ -141,7 +147,7 @@ def init_lmcache_engine(
     VLLM_PARALLEL_CONFIG = parallel_config
     VLLM_MODEL_CONFIG = model_config
     VLLM_SCHEDULER_CONFIG = scheduler_config
-
+    print(f"XXXX {cache_config}")
     config = lmcache_get_config()
     assert isinstance(config, LMCacheEngineConfig), (
         "LMCache v1 configuration is should be passed."
@@ -171,6 +177,16 @@ def init_lmcache_engine(
     # Change current device.
     torch.cuda.device(parallel_config.rank)
     device = torch.device(f"cuda:{parallel_config.rank}")
+
+    backend = get_attn_backend(model_config.get_head_size(),
+                                   model_config.dtype,
+                                   cache_config.cache_dtype,
+                                   cache_config.block_size,
+                                   model_config.is_attention_free,
+                                   use_mla)
+    backend_name = backend.get_name()
+    attn_backend = backend_name_to_enum(backend_name)
+    use_flashinfer = attn_backend == _Backend.FLASHINFER_VLLM_V1
     metadata = LMCacheEngineMetadata(
         model_config.model,
         parallel_config.world_size,
@@ -178,6 +194,11 @@ def init_lmcache_engine(
         "vllm",
         kv_dtype,
         kv_shape,
+        head_size,
+        cache_config.block_size,
+        use_flashinfer,
+        engine_id,
+        get_tensor_model_parallel_rank(),
         use_mla,
     )
 

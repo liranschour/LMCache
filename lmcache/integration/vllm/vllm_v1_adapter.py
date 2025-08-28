@@ -411,6 +411,7 @@ class LMCacheConnectorV1Impl:
                 vllm_config.parallel_config,
                 vllm_config.cache_config,
                 vllm_config.scheduler_config,
+                vllm_config.kv_transfer_config.engine_id,
             )
 
             self.use_layerwise = config.use_layerwise
@@ -504,9 +505,9 @@ class LMCacheConnectorV1Impl:
         assert isinstance(metadata, LMCacheConnectorMetadata)
 
         self._reqs_local_blocks.update(metadata.reqs_to_recv)
-        logger.info(f"XXX -----------------")
-        for req_id, local_block_ids in self._reqs_local_blocks.items():
-            logger.info(f"XXX {req_id} blocks = {local_block_ids}")
+        # logger.info(f"XXX -----------------")
+        # for req_id, local_block_ids in self._reqs_local_blocks.items():
+        #     logger.info(f"XXX {req_id} blocks = {local_block_ids}")
 
         assert len(self.kv_caches) > 0
         kvcaches = list(self.kv_caches.values())
@@ -1035,3 +1036,6 @@ class LMCacheConnectorV1Impl:
             logger.info(f"XXX {return_params}")
 
         return 0, return_params
+
+    def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
+        self.lmcache_engine.register_kv_caches(kv_caches)

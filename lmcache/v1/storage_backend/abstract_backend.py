@@ -179,3 +179,6 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
         Close the storage backend.
         """
         raise NotImplementedError
+
+    def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
+        pass

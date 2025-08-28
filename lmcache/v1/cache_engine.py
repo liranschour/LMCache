@@ -690,6 +690,9 @@ class LMCacheEngine:
         self.storage_manager.close()
         logger.info("LMCacheEngine closed.")
 
+    def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
+        print("XXX register kvcaches")
+        self.storage_manager.register_kv_caches(kv_caches)
 
 class LMCacheEngineBuilder:
     _instances: Dict[str, LMCacheEngine] = {}

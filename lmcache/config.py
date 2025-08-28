@@ -44,9 +44,15 @@ class LMCacheEngineMetadata:
     """ the shape of kv tensors """
     """ (num_layer, 2, chunk_size, num_kv_head, head_size) """
     kv_shape: tuple[int, int, int, int, int]
+
+    model_head_size: int
+    vllm_block_size: int
+    use_flashinfer: bool
+    engine_id: str
+    tp_rank: int
+
     """ whether use MLA"""
     use_mla: bool = False
-
 
 @dataclass
 class LMCacheMemPoolMetadata:
