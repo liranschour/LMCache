@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from vllm.v1.core.kv_cache_manager import KVCacheManager
     from vllm.v1.core.sched.output import NewRequestData
     from vllm.v1.request import Request
+    from vllm.v1.core.kv_cache_manager import KVCacheBlocks
 
 logger = init_logger(__name__)
 
@@ -367,9 +368,11 @@ class ReqMeta:
 @dataclass
 class LMCacheConnectorMetadata(KVConnectorMetadata):
     requests: list[ReqMeta]
+    reqs_to_recv: dict[str, list[int]]
 
     def __init__(self):
         self.requests = []
+        self.reqs_to_recv = {}
 
     def add_request(self, req_meta: ReqMeta) -> None:
         """Add a request to the metadata.
@@ -379,6 +382,12 @@ class LMCacheConnectorMetadata(KVConnectorMetadata):
         """
         self.requests.append(req_meta)
 
+    def add_new_recv_req(
+        self,
+        request_id: str,
+        local_block_ids: list[int],
+    ):
+        self.reqs_to_recv[request_id] = local_block_ids
 
 class LMCacheConnectorV1Impl:
     def __init__(
@@ -452,6 +461,11 @@ class LMCacheConnectorV1Impl:
         )
         self.current_layer = 0
 
+        self._reqs_need_recv: dict[ReqId, tuple[Request, list[int]]] = {}
+
+        self._reqs_local_blocks: dict[str, list[int]] = {}
+
+
     def _init_kv_caches_from_forward_context(self, forward_context: "ForwardContext"):
         for layer_name in forward_context.no_compile_layers:
             attn_layer = forward_context.no_compile_layers[layer_name]
@@ -488,6 +502,11 @@ class LMCacheConnectorV1Impl:
 
         metadata = self._parent._get_connector_metadata()
         assert isinstance(metadata, LMCacheConnectorMetadata)
+
+        self._reqs_local_blocks.update(metadata.reqs_to_recv)
+        logger.info(f"XXX -----------------")
+        for req_id, local_block_ids in self._reqs_local_blocks.items():
+            logger.info(f"XXX {req_id} blocks = {local_block_ids}")
 
         assert len(self.kv_caches) > 0
         kvcaches = list(self.kv_caches.values())
@@ -844,13 +863,33 @@ class LMCacheConnectorV1Impl:
         return need_to_allocate
 
     @_lmcache_nvtx_annotate
-    def update_state_after_alloc(self, request: "Request", num_external_tokens: int):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks",
+                                 num_external_tokens: int):
         """
         Update KVConnector state after temporary buffer alloc.
 
         For SharedStorageConnector, update _request_needs_load
         if the CacheManager this allocated blocks for us.
         """
+
+        params = request.kv_transfer_params
+        logger.info(
+            "XXX NIXLConnector update_state_after_alloc: "
+            "num_external_tokens=%s, kv_transfer_params=%s, blocks=%s",
+            num_external_tokens, params, blocks)
+
+        if params is not None and params.get("do_remote_prefill"):
+            local_block_ids = (blocks.get_block_ids()[0]
+                               if num_external_tokens > 0 else [])
+            logger.info(f"XXX {request.request_id} blocks {local_block_ids}")
+            # Get unhashed blocks to pull from remote.
+            self._reqs_need_recv[request.request_id] = (
+                request, local_block_ids)
+
+            # Only trigger 1 KV transfer per request.
+            params["do_remote_prefill"] = False
+            #return
+            print(f"XXX need to return HERE")
 
         self._requests_in_step[request.request_id] = request
 
@@ -899,6 +938,17 @@ class LMCacheConnectorV1Impl:
         force_skip_save = self.kv_role == "kv_consumer"
 
         meta = LMCacheConnectorMetadata()
+
+        # Loop through scheduled reqs and convert to ReqMeta.
+        for req_id, (req, block_ids) in self._reqs_need_recv.items():
+            assert req.kv_transfer_params is not None
+            logger.info(f"XXX add req {req_id}")
+            meta.add_new_recv_req(
+                request_id=req_id,
+                local_block_ids=block_ids)
+
+        # Clear the list once workers start the transfers
+        self._reqs_need_recv.clear()
 
         for finished_req_id in scheduler_output.finished_req_ids:
             self._request_trackers.pop(finished_req_id, None)
@@ -976,5 +1026,12 @@ class LMCacheConnectorV1Impl:
             return_params = {
                 "first_tok": request._output_token_ids[0],
             }
+
+        if params is not None and params.get("do_remote_decode"):
+            if return_params is None:
+                return_params = {}
+            return_params["do_remote_prefill"] = True
+            return_params["do_remote_decode"] = False
+            logger.info(f"XXX {return_params}")
 
         return 0, return_params
