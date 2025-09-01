@@ -306,6 +306,11 @@ class LocalCPUBackend(StorageBackendInterface):
 
         self.remote_gpu_xfer_handle = self._agent.prep_xfer_dlist(self.gpu_peer_name, gpu_descs)
 
+    def get_finished(
+        self, finished_req_ids: set[str]
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        logger.info(f"XXX {finished_req_ids}")
+
     def _send_transfers_loop(self):
         while self._running:
 

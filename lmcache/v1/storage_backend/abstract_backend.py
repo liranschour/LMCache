@@ -182,3 +182,8 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
 
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
         pass
+
+    def get_finished(
+        self, finished_req_ids: set[str]
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        pass

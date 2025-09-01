@@ -694,6 +694,11 @@ class LMCacheEngine:
         print("XXX register kvcaches")
         self.storage_manager.register_kv_caches(kv_caches)
 
+    def get_finished(
+        self, finished_req_ids: set[str]
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        return self.storage_manager.get_finished(finished_req_ids)
+
 class LMCacheEngineBuilder:
     _instances: Dict[str, LMCacheEngine] = {}
     _cfgs: Dict[str, LMCacheEngineConfig] = {}

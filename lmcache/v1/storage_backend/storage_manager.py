@@ -458,3 +458,9 @@ class StorageManager:
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
         for backend in self.storage_backends.values():
             backend.register_kv_caches(kv_caches)
+
+    def get_finished(
+        self, finished_req_ids: set[str]
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        for backend in self.storage_backends.values():
+            return backend.get_finished(finished_req_ids)
