@@ -295,10 +295,16 @@ class LocalCPUBackend(StorageBackendInterface):
         logger.debug("Created %s blocks for src engine %s and rank %s",
                      len(blocks_data), self.engine_id, self.tp_rank)
 
-        descs = self._agent_gpu.get_xfer_descs(blocks_data, "VRAM")
+        gpu_descs = self._agent_gpu.get_xfer_descs(blocks_data, "VRAM")
         # NIXL_INIT_AGENT to be used for preparations of local descs.
         self.gpu_xfer_side_handle = self._agent_gpu.prep_xfer_dlist(
-            "NIXL_INIT_AGENT", descs)
+            "NIXL_INIT_AGENT", gpu_descs)
+
+        # Excahnge gpu agent metadata and prepare xfer list
+        gpu_meta = self._agent_gpu.get_agent_metadata()
+        self.gpu_peer_name = self._agent.add_remote_agent(gpu_meta)
+
+        self.remote_gpu_xfer_handle = self._agent.prep_xfer_dlist(self.gpi_peer_name, descs)
 
     def _send_transfers_loop(self):
         while self._running:
