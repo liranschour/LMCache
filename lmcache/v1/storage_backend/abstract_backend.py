@@ -186,4 +186,4 @@ class StorageBackendInterface(metaclass=abc.ABCMeta):
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
-        pass
+        return None, None

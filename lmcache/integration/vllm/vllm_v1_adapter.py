@@ -787,7 +787,7 @@ class LMCacheConnectorV1Impl:
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
-        return None, None
+        return self.lmcache_engine.get_finished(finished_req_ids)
 
     ###################
     # Scheduler side APIs

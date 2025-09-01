@@ -310,6 +310,7 @@ class LocalCPUBackend(StorageBackendInterface):
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
         logger.info(f"XXX {finished_req_ids}")
+        return None, None
 
     def _send_transfers_loop(self):
         while self._running:
