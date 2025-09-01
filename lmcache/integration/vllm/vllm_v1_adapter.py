@@ -405,7 +405,10 @@ class LMCacheConnectorV1Impl:
         if role == KVConnectorRole.SCHEDULER:
             self.lookup_client = LMCacheLookupClient(role, is_tp, vllm_config)
             self._requests_in_step: dict[str, Request] = {}
+            self._reqs_need_recv: dict[ReqId, tuple[Request, list[int]]] = {}
         else:
+            self._reqs_local_blocks: dict[str, list[int]] = {}
+
             self.lmcache_engine = init_lmcache_engine(
                 vllm_config.model_config,
                 vllm_config.parallel_config,
@@ -462,10 +465,6 @@ class LMCacheConnectorV1Impl:
         )
         self.current_layer = 0
 
-        self._reqs_need_recv: dict[ReqId, tuple[Request, list[int]]] = {}
-
-        self._reqs_local_blocks: dict[str, list[int]] = {}
-
 
     def _init_kv_caches_from_forward_context(self, forward_context: "ForwardContext"):
         for layer_name in forward_context.no_compile_layers:
@@ -505,9 +504,9 @@ class LMCacheConnectorV1Impl:
         assert isinstance(metadata, LMCacheConnectorMetadata)
 
         self._reqs_local_blocks.update(metadata.reqs_to_recv)
-        # logger.info(f"XXX -----------------")
-        # for req_id, local_block_ids in self._reqs_local_blocks.items():
-        #     logger.info(f"XXX {req_id} blocks = {local_block_ids}")
+
+        for req_id, local_block_ids in self._reqs_local_blocks.items():
+             logger.info(f"XXX {req_id} blocks = {local_block_ids}")
 
         assert len(self.kv_caches) > 0
         kvcaches = list(self.kv_caches.values())
