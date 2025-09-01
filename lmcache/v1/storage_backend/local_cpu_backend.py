@@ -304,7 +304,7 @@ class LocalCPUBackend(StorageBackendInterface):
         gpu_meta = self._agent_gpu.get_agent_metadata()
         self.gpu_peer_name = self._agent.add_remote_agent(gpu_meta)
 
-        self.remote_gpu_xfer_handle = self._agent.prep_xfer_dlist(self.gpi_peer_name, descs)
+        self.remote_gpu_xfer_handle = self._agent.prep_xfer_dlist(self.gpu_peer_name, descs)
 
     def _send_transfers_loop(self):
         while self._running:
