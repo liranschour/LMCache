@@ -165,6 +165,7 @@ class StorageManager:
 
     def batched_put(
         self,
+        req_id: str,
         keys: Sequence[CacheEngineKey],
         memory_objs: List[MemoryObj],
     ) -> None:
@@ -182,7 +183,7 @@ class StorageManager:
         for backend in self.storage_backends.values():
             # NOTE: the handling of exists_in_put_tasks
             # is done in the backend
-            backend.batched_submit_put_task(keys, memory_objs)
+            backend.batched_submit_put_task(keys, memory_objs, req_id)
 
         for memory_obj in memory_objs:
             memory_obj.ref_count_down()
@@ -235,6 +236,15 @@ class StorageManager:
                 # TODO (Jiayi): add write-back logic here
                 return task
         return None
+
+    def retrieve_async(
+        self,
+        req_id: str,
+        local_block_ids: list[int],
+    ) -> None:
+        logger.info(f"XXXXXXX")
+        local_cpu_backend = self.storage_backends["LocalCPUBackend"]
+        return local_cpu_backend.retrieve_async(req_id, local_block_ids)
 
     def batched_get(
         self,
@@ -462,5 +472,5 @@ class StorageManager:
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
-        for backend in self.storage_backends.values():
-            return backend.get_finished(finished_req_ids)
+        local_cpu_backend = self.storage_backends["LocalCPUBackend"]
+        return local_cpu_backend.get_finished(finished_req_ids)

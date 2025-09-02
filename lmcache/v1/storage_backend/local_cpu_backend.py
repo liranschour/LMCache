@@ -185,6 +185,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
             self._running = True
             # Start Nixl completion thread
+            self._completed_h2h = {}
+            self._req_blocks = {}
             self._transfers = {}
             self._transfers_lock = threading.Lock()
             self._transfers_thread = threading.Thread(
@@ -318,7 +320,7 @@ class LocalCPUBackend(StorageBackendInterface):
             remove_handles = []
             if self._nixl_operation == "WRITE":
                 with self._transfers_lock:
-                    for handle, (t_done, msg_size, start) in self._transfers.items(): # XXX temp - need to use get_finished() here
+                    for handle, (t_done, msg_size, start, req_id, memory_objs) in self._transfers.items(): # XXX temp - need to use get_finished() here
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -340,10 +342,10 @@ class LocalCPUBackend(StorageBackendInterface):
     def _recv_transfers_loop(self):
         while self._running:
 
-            remove_handles = []
+            completed = []
             if self._nixl_operation == "READ":
                 with self._transfers_lock:
-                    for handle, (t_done, msg_size, start) in self._transfers.items():
+                    for handle, (t_done, msg_size, start, req_id, memory_objs) in self._transfers.items():
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -355,11 +357,13 @@ class LocalCPUBackend(StorageBackendInterface):
 
                             self._agent.release_xfer_handle(handle)
                             t_done.set()
-                            remove_handles.append(handle)
+                            self._completed_h2h[req_id] = (msg_size, memory_objs)
+                            completed.append((handle, msg_size, req_id))
 
-                    for handle in remove_handles:
+                    for handle, msg_size, req_id in completed:
                         assert handle in self._transfers
                         del self._transfers[handle]
+
             else:
                 # WRITE
                 all_notifs = self._agent.get_new_notifs().values() # XXX the code assumes a single peer for now
@@ -372,17 +376,30 @@ class LocalCPUBackend(StorageBackendInterface):
                             value = self._transfers.pop(handle, None)
 
                         if value is not None:
-                            t_done, msg_size, start = value
+                            t_done, msg_size, start, req_id, memory_objs = value
                             end = time.perf_counter()
                             logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
 
                             t_done.set()
+                            self._completed_h2h[req_id] = (msg_size, memory_objs)
+
+            ready_to_xfer = False
+            with self._transfers_lock:
+                for req_id, local_block_ids in self._req_blocks.items():
+                    if req_id in self._completed_h2h:
+                        logger.info(f"XXX Start h2d transfer")
+                        ready_to_xfer = True
+                        break
+
+                if ready_to_xfer:
+                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={local_block_ids} size={msg_size}")
+                    msg_size = self._completed_h2h.pop(req_id, None)
 
             time.sleep(0.001)  # Avoid busy waiting
 
-    def insert_transfer(self, handle, msg_size, start):
+    def insert_transfer(self, handle, msg_size, start, req_id, memory_objs):
         with self._transfers_lock:
-            self._transfers[handle] = (threading.Event(), msg_size, start)
+            self._transfers[handle] = (threading.Event(), msg_size, start, req_id, memory_objs)
 
     def wait_for_transfer(self, handle):
         t_done = None
@@ -445,8 +462,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 #request = NixlRequest.deserialize(msg)
 
-                keys, metadatas, nixl_operation = pickle.loads(msg)
-                logger.debug(f"XXX Received request for NIXL {nixl_operation} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                req_id, keys, metadatas, nixl_operation = pickle.loads(msg)
+                logger.debug(f"XXX Received request {req_id} for NIXL {nixl_operation} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 l_metadatas = []
                 memory_objs = []
@@ -489,10 +506,10 @@ class LocalCPUBackend(StorageBackendInterface):
                         mem_obj.metadata.handle = handle
 
                     # Begin async xfer.
-                    self.insert_transfer(handle, total_size, start)
+                    self.insert_transfer(handle, total_size, start, req_id, memory_objs)
 
                     self._agent.transfer(handle)
-                    self.batched_submit_put_task(keys, memory_objs)
+                    self.batched_submit_put_task(keys, memory_objs, req_id)
 
                     for memory_obj in memory_objs:
                         memory_obj.ref_count_down()
@@ -503,9 +520,9 @@ class LocalCPUBackend(StorageBackendInterface):
                         mem_obj.metadata.handle = handle
 
                     start = time.perf_counter()
-                    self.insert_transfer(handle, total_size, start)
+                    self.insert_transfer(handle, total_size, start, req_id, memory_objs)
 
-                    self.batched_submit_put_task(keys, memory_objs)
+                    self.batched_submit_put_task(keys, memory_objs, req_id)
 
                     message = (l_metadatas, handle)
                     data = pickle.dumps(message)
@@ -578,10 +595,21 @@ class LocalCPUBackend(StorageBackendInterface):
                 )
         return None
 
+    def retrieve_async(
+        self,
+        req_id: str,
+        local_block_ids: list[int],
+    ) -> None:
+        logger.info(f"XXX {req_id} {local_block_ids} XXX {req_id in self._completed_h2h}")
+
+        with self._transfers_lock:
+            self._req_blocks[req_id] = local_block_ids
+
     def batched_submit_put_task(
         self,
         keys: List[CacheEngineKey],
         memory_objs: List[MemoryObj],
+        req_id,
     ) -> Optional[List[Future]]:
         """
         Synchronously put the MemoryObjs into the local cpu backend.
@@ -604,7 +632,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if self._nixl_role == "sender":
             # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-            message = (pushed_keys, metadatas, self._nixl_operation)
+            message = (req_id, pushed_keys, metadatas, self._nixl_operation)
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
@@ -646,7 +674,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 # XXX TODO: Increase reference count of memory objects till transfer is completed
 
-                self.insert_transfer(handle, total_size, start)
+                self.insert_transfer(handle, total_size, start, req_id, None)
 
                 # Begin async xfer.
                 self._agent.transfer(handle)

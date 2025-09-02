@@ -149,6 +149,7 @@ class LMCacheEngine:
     @torch.inference_mode()
     def store(
         self,
+        req_id: str,
         tokens: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         **kwargs,
@@ -215,7 +216,7 @@ class LMCacheEngine:
         offload_time += time.perf_counter() - t
 
         t = time.perf_counter()
-        self.storage_manager.batched_put(keys, memory_objs)
+        self.storage_manager.batched_put(req_id, keys, memory_objs)
         put_time += time.perf_counter() - t
 
         tot_time = offload_time + put_time
@@ -344,6 +345,14 @@ class LMCacheEngine:
         self.stats_monitor.on_store_finished(monitor_req_id, tot_token_num)
         logger.debug(f"Stored {tot_token_num} out of total {len(tokens)} tokens")
         yield
+
+    def retrieve_async(
+        self,
+        req_id: str,
+        local_block_ids: list[int],
+    ) -> None:
+        logger.info(f"XXXXXXX")
+        self.storage_manager.retrieve_async(req_id,local_block_ids)
 
     @_lmcache_nvtx_annotate
     @torch.inference_mode()

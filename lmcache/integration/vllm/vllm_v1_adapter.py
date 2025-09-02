@@ -507,6 +507,7 @@ class LMCacheConnectorV1Impl:
 
         for req_id, local_block_ids in self._reqs_local_blocks.items():
              logger.info(f"XXX {req_id} blocks = {local_block_ids}")
+             self.lmcache_engine.retrieve_async(req_id, local_block_ids)
 
         assert len(self.kv_caches) > 0
         kvcaches = list(self.kv_caches.values())
@@ -774,6 +775,7 @@ class LMCacheConnectorV1Impl:
                 request.req_id,
             )
             self.lmcache_engine.store(
+                request.req_id,
                 token_ids,
                 mask=store_mask,
                 kvcaches=kvcaches,
