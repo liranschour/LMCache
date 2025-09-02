@@ -339,6 +339,33 @@ class LocalCPUBackend(StorageBackendInterface):
 
             time.sleep(0.001)  # Avoid busy waitingsleep
 
+    def _h2d_transfer(self, req_id: str, memory_objs: list[MemoryObj], gpu_block_ids: list[int]):
+        cpu_descs_ids = []
+        total_size = 0
+        for mem_obj in memory_objs:
+            metadata = mem_obj.metadata
+            assert metadata.phy_size % self._nixl_block_size == 0
+            num_blocks = metadata.phy_size // self._nixl_block_size
+            total_size += metadata.phy_size
+
+            cpu_base_block_id = metadata.address // self._nixl_block_size
+
+            for block_id in range(num_blocks):
+                cpu_descs_ids.append(cpu_base_block_id + block_id)
+
+        logger.info(f"XXX nixl write to gpu: cpu blocks {len(cpu_descs_ids)} gpu blocks {len(gpu_block_ids)} nixl block size {self._nixl_block_size} vllm block size {self.vllm_block_size}")
+        start = time.perf_counter()
+
+        handle = self._agent.make_prepped_xfer(
+            "WRITE",
+            self.src_xfer_side_handle,
+            cpu_descs_ids,
+            self.remote_gpu_xfer_handle,
+            gpu_block_ids,
+            notif_msg="XXXX",
+            skip_desc_merge=False,
+        )
+
     def _recv_transfers_loop(self):
         while self._running:
 
@@ -385,15 +412,16 @@ class LocalCPUBackend(StorageBackendInterface):
 
             ready_to_xfer = False
             with self._transfers_lock:
-                for req_id, local_block_ids in self._req_blocks.items():
+                for req_id, gpu_block_ids in self._req_blocks.items():
                     if req_id in self._completed_h2h:
-                        logger.info(f"XXX Start h2d transfer")
                         ready_to_xfer = True
                         break
 
                 if ready_to_xfer:
-                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={local_block_ids} size={msg_size}")
-                    msg_size = self._completed_h2h.pop(req_id, None)
+                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids} size={msg_size}")
+                    msg_size, memory_objs = self._completed_h2h.pop(req_id, None)
+
+                    self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
 
             time.sleep(0.001)  # Avoid busy waiting
 
@@ -499,7 +527,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         self.dst_xfer_side_handle,
                         remote_descs_ids,
                         notif_msg="XXX",
-                        skip_desc_merge=False,  # XXX need to check this
+                        skip_desc_merge=False,
                     )
 
                     for mem_obj in memory_objs:
