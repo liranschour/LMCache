@@ -97,9 +97,10 @@ class LocalCPUBackend(StorageBackendInterface):
         # HACK static calculation of token size in bytes
         shape = (2, 32, 1, 1024)
         dtype = torch.bfloat16
-        self._nixl_chunk_size = 1
+        self._nixl_chunk_size = self.vllm_block_size
 
-        self._nixl_block_size = (math.prod(shape)) * (torch.tensor([], dtype=dtype).element_size()) * self._nixl_chunk_size
+        self.element_size = torch.empty((), dtype=dtype).element_size()
+        self._nixl_block_size = (math.prod(shape)) * (torch.tensor([], dtype=dtype).element_size()) * self._nixl_chunk_size # XXXX fixme
         print(f"XXX nixl block size={self._nixl_block_size}")
 
         assert config.nixl_role in ["sender", "receiver"], (
@@ -117,6 +118,9 @@ class LocalCPUBackend(StorageBackendInterface):
 
         # Nixl register memory
         mem_base_addr, mem_size = self.memory_allocator.get_mem_layout()
+        self.mem_base_addr = mem_base_addr
+        self.mem_size = mem_size
+
         local_mem = [(mem_base_addr, mem_size, 0, "")]
         descs = self._agent.get_reg_descs(local_mem, "DRAM")
         self._agent.register_memory(descs)
@@ -225,6 +229,7 @@ class LocalCPUBackend(StorageBackendInterface):
         # hybrid attn, etc
         # block size in bytes
         self.block_len = kv_elem_size * math.prod(block_shape)
+
         logger.info(
             "XXXXX Registering KV_Caches: use_mla: %s, num_blocks: %s, "
             "block_shape: %s, per_layer_kv_cache_shape: %s", self.use_mla,
@@ -277,9 +282,8 @@ class LocalCPUBackend(StorageBackendInterface):
         #     assert len(self.block_window_per_layer) == self.num_layers
 
         descs = self._agent_gpu.get_reg_descs(caches_data, "VRAM")
-        logger.info("XXX Registering descs: %s", caches_data)
+        logger.debug("XXX Registering descs: %s", caches_data)
         self._agent_gpu.register_memory(descs)
-        logger.info("XXX Done registering descs")
 
         # Register local/src descr for NIXL xfer.
         blocks_data = []
@@ -294,24 +298,27 @@ class LocalCPUBackend(StorageBackendInterface):
                 addr = base_addr + block_offset
                 # (addr, len, device id)
                 blocks_data.append((addr, self.block_len, self.tp_rank))
-        logger.debug("Created %s blocks for src engine %s and rank %s",
+        logger.info("XXXX Created %s blocks for src engine %s and rank %s",
                      len(blocks_data), self.engine_id, self.tp_rank)
 
-        gpu_descs = self._agent_gpu.get_xfer_descs(blocks_data, "VRAM")
-        # NIXL_INIT_AGENT to be used for preparations of local descs.
-        self.gpu_xfer_side_handle = self._agent_gpu.prep_xfer_dlist(
-            "NIXL_INIT_AGENT", gpu_descs)
+        gpu_descs = self._agent_gpu.get_xfer_descs(blocks_data, "VRAM", is_sorted=True)
 
         # Excahnge gpu agent metadata and prepare xfer list
         gpu_meta = self._agent_gpu.get_agent_metadata()
         self.gpu_peer_name = self._agent.add_remote_agent(gpu_meta)
+        print(f"XXXX {self.gpu_peer_name}\n {gpu_descs}")
 
-        self.remote_gpu_xfer_handle = self._agent.prep_xfer_dlist(self.gpu_peer_name, gpu_descs)
+        self.remote_gpu_xfer_handle = self._agent.prep_xfer_dlist(self.gpu_peer_name, gpu_descs, "VRAM")
+        assert self.remote_gpu_xfer_handle != 0
+
+        self.src_xfer_block_side_handle = self.create_xfer_descs("NIXL_INIT_AGENT", self.mem_base_addr, self.mem_size // self.block_len, self.block_len)
+        assert self.src_xfer_block_side_handle != 0
+
+        print(f"XXXX {self.mem_base_addr} cpu blocks {self.mem_size //self.block_len} block len {self.block_len}\n {self.src_xfer_block_side_handle}\n {self.remote_gpu_xfer_handle}")
 
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
-        logger.info(f"XXX {finished_req_ids}")
         return None, None
 
     def _send_transfers_loop(self):
@@ -339,32 +346,75 @@ class LocalCPUBackend(StorageBackendInterface):
 
             time.sleep(0.001)  # Avoid busy waitingsleep
 
-    def _h2d_transfer(self, req_id: str, memory_objs: list[MemoryObj], gpu_block_ids: list[int]):
-        cpu_descs_ids = []
-        total_size = 0
+    def get_offset(self, kv_shape, kv, layers, tokens, dim):
+        x,y,z,w = kv_shape
+        strides = (y*z*w, z*w, w, 1)
+
+        return kv*strides[0] + layers*strides[1] + tokens*strides[2] + dim*strides[3]
+
+    def _get_mem_cpu_desc_ids(self,
+                              memory_objs: list[MemoryObj]) -> list[int]:
+        descs_ids: list[int] = []
+
         for mem_obj in memory_objs:
-            metadata = mem_obj.metadata
-            assert metadata.phy_size % self._nixl_block_size == 0
-            num_blocks = metadata.phy_size // self._nixl_block_size
-            total_size += metadata.phy_size
+            base_offset = mem_obj.metadata.address
+            kv_shape = mem_obj.get_shape()
+            for layer in range(kv_shape[1]):
+                for block in range(0, kv_shape[2], self.vllm_block_size):
+                    for kv in range(kv_shape[0]):
+                        idx = (kv, layer, block, 0)
+                        offset = self.get_offset(kv_shape, kv, layer, block, 0) * self.element_size
+                        offset += base_offset
+                        assert offset % self.block_len == 0
+                        descs_ids.append(offset // self.block_len)
 
-            cpu_base_block_id = metadata.address // self._nixl_block_size
+        return descs_ids
 
-            for block_id in range(num_blocks):
-                cpu_descs_ids.append(cpu_base_block_id + block_id)
+    def _get_gpu_descs_ids(self,
+                           block_ids: list[int]) -> list[int]:
+        """
+        Get the descs ids for a set of block ids.
+        """
+        region_ids = range(self.num_regions)
 
-        logger.info(f"XXX nixl write to gpu: cpu blocks {len(cpu_descs_ids)} gpu blocks {len(gpu_block_ids)} nixl block size {self._nixl_block_size} vllm block size {self.vllm_block_size}")
+        num_blocks = self.num_blocks
+
+        # Compute the desc ids for each block.
+        descs_ids: list[int] = []
+        for reg_id in region_ids:
+            for block_id in block_ids:
+                descs_ids.append(reg_id * num_blocks + block_id)
+        return descs_ids
+
+    def _h2d_transfer(self, req_id: str, memory_objs: list[MemoryObj], gpu_block_ids: list[int]):
+        cpu_desc_ids = self._get_mem_cpu_desc_ids(memory_objs)
+        gpu_desc_ids = self._get_gpu_descs_ids(gpu_block_ids)
+        logger.debug(f"XXX write to gpu: cpu blocks={len(cpu_desc_ids)}\n gpu blocks={len(gpu_desc_ids)}")
         start = time.perf_counter()
 
         handle = self._agent.make_prepped_xfer(
             "WRITE",
-            self.src_xfer_side_handle,
-            cpu_descs_ids,
+            self.src_xfer_block_side_handle,
+            cpu_desc_ids,
             self.remote_gpu_xfer_handle,
-            gpu_block_ids,
-            notif_msg="XXXX",
+            gpu_desc_ids,
+            notif_msg=b"XXXX",
             skip_desc_merge=False,
         )
+
+        self._agent.transfer(handle)
+
+        sender_done = False
+        while not sender_done:
+            state = self._agent.check_xfer_state(handle)
+            if state == "ERR":
+                print("Transfer got to Error state.")
+                exit()
+            elif state == "DONE":
+                self._agent.release_xfer_handle(handle)
+                sender_done = True
+
+            time.sleep(0.001)  # Avoid busy waitingsleep
 
     def _recv_transfers_loop(self):
         while self._running:
@@ -410,11 +460,15 @@ class LocalCPUBackend(StorageBackendInterface):
                             t_done.set()
                             self._completed_h2h[req_id] = (msg_size, memory_objs)
 
+            completed = []
             ready_to_xfer = False
+            req_id = None
+            gpu_block_ids = None
             with self._transfers_lock:
                 for req_id, gpu_block_ids in self._req_blocks.items():
                     if req_id in self._completed_h2h:
                         ready_to_xfer = True
+                        completed.append(req_id)
                         break
 
                 if ready_to_xfer:
@@ -422,6 +476,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     msg_size, memory_objs = self._completed_h2h.pop(req_id, None)
 
                     self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
+                    self._req_blocks.pop(req_id, None)
 
             time.sleep(0.001)  # Avoid busy waiting
 
@@ -570,17 +625,17 @@ class LocalCPUBackend(StorageBackendInterface):
                 if self._running:
                     time.sleep(0.01)
 
-    def create_xfer_descs(self, agent_name, base_addr, num_blocks, block_size):
+    def create_xfer_descs(self, agent_name, base_addr, num_blocks, block_len):
         blocks_data = []
-
+        logger.info(f"XXXX {agent_name}::n_blocks={num_blocks} block_len={block_len}")
         for block_id in range(num_blocks):
-            block_offset = block_id * block_size
+            block_offset = block_id * block_len
             addr = base_addr + block_offset
-            blocks_data.append((addr, block_size, 0))
+            blocks_data.append((addr, block_len, 0))
 
-        descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
+        #descs = self._agent.get_xfer_descs(blocks_data, "DRAM")
 
-        return self._agent.prep_xfer_dlist(agent_name, descs)
+        return self._agent.prep_xfer_dlist(agent_name, blocks_data, "DRAM", True)
 
     def __str__(self):
         return self.__class__.__name__
@@ -628,8 +683,6 @@ class LocalCPUBackend(StorageBackendInterface):
         req_id: str,
         local_block_ids: list[int],
     ) -> None:
-        logger.info(f"XXX {req_id} {local_block_ids} XXX {req_id in self._completed_h2h}")
-
         with self._transfers_lock:
             self._req_blocks[req_id] = local_block_ids
 
@@ -697,7 +750,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     self.dst_xfer_side_handle,
                     remote_descs_ids,
                     notif_msg=msg_id,
-                    skip_desc_merge=False,  # XXX need to check this
+                    skip_desc_merge=False,
                 )
 
                 # XXX TODO: Increase reference count of memory objects till transfer is completed

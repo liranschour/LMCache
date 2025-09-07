@@ -351,7 +351,6 @@ class LMCacheEngine:
         req_id: str,
         local_block_ids: list[int],
     ) -> None:
-        logger.info(f"XXXXXXX")
         self.storage_manager.retrieve_async(req_id,local_block_ids)
 
     @_lmcache_nvtx_annotate

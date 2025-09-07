@@ -506,8 +506,9 @@ class LMCacheConnectorV1Impl:
         self._reqs_local_blocks.update(metadata.reqs_to_recv)
 
         for req_id, local_block_ids in self._reqs_local_blocks.items():
-             logger.info(f"XXX {req_id} blocks = {local_block_ids}")
+             logger.debug(f"XXX {req_id} blocks = {local_block_ids}")
              self.lmcache_engine.retrieve_async(req_id, local_block_ids)
+        self._reqs_local_blocks.clear()
 
         assert len(self.kv_caches) > 0
         kvcaches = list(self.kv_caches.values())
@@ -875,15 +876,14 @@ class LMCacheConnectorV1Impl:
         """
 
         params = request.kv_transfer_params
-        logger.info(
-            "XXX NIXLConnector update_state_after_alloc: "
+        logger.debug(
+            "XXX update_state_after_alloc: "
             "num_external_tokens=%s, kv_transfer_params=%s, blocks=%s",
             num_external_tokens, params, blocks)
 
         if params is not None and params.get("do_remote_prefill"):
             local_block_ids = (blocks.get_block_ids()[0]
                                if num_external_tokens > 0 else [])
-            logger.info(f"XXX {request.request_id} blocks {local_block_ids}")
             # Get unhashed blocks to pull from remote.
             self._reqs_need_recv[request.request_id] = (
                 request, local_block_ids)
@@ -944,7 +944,7 @@ class LMCacheConnectorV1Impl:
         # Loop through scheduled reqs and convert to ReqMeta.
         for req_id, (req, block_ids) in self._reqs_need_recv.items():
             assert req.kv_transfer_params is not None
-            logger.info(f"XXX add req {req_id}")
+
             meta.add_new_recv_req(
                 request_id=req_id,
                 local_block_ids=block_ids)

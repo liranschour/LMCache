@@ -242,7 +242,6 @@ class StorageManager:
         req_id: str,
         local_block_ids: list[int],
     ) -> None:
-        logger.info(f"XXXXXXX")
         local_cpu_backend = self.storage_backends["LocalCPUBackend"]
         return local_cpu_backend.retrieve_async(req_id, local_block_ids)
 
