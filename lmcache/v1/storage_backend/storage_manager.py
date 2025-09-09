@@ -166,6 +166,7 @@ class StorageManager:
     def batched_put(
         self,
         req_id: str,
+        starts: List[int],
         keys: Sequence[CacheEngineKey],
         memory_objs: List[MemoryObj],
     ) -> None:
@@ -183,7 +184,7 @@ class StorageManager:
         for backend in self.storage_backends.values():
             # NOTE: the handling of exists_in_put_tasks
             # is done in the backend
-            backend.batched_submit_put_task(keys, memory_objs, req_id)
+            backend.batched_submit_put_task(starts, keys, memory_objs, req_id)
 
         for memory_obj in memory_objs:
             memory_obj.ref_count_down()
