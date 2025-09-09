@@ -216,7 +216,7 @@ class LMCacheEngine:
         offload_time += time.perf_counter() - t
 
         t = time.perf_counter()
-        self.storage_manager.batched_put(req_id, starts, keys, memory_objs)
+        self.storage_manager.batched_put(req_id, starts, ends, keys, memory_objs)
         put_time += time.perf_counter() - t
 
         tot_time = offload_time + put_time

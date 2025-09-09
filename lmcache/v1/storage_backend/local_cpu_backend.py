@@ -15,7 +15,7 @@
 # Standard
 from collections import OrderedDict
 from concurrent.futures import Future
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
 import threading
 
 # Third Party
@@ -327,7 +327,7 @@ class LocalCPUBackend(StorageBackendInterface):
             remove_handles = []
             if self._nixl_operation == "WRITE":
                 with self._transfers_lock:
-                    for handle, (start_token, k_len, t_done, msg_size, start, req_id, memory_objs) in self._transfers.items(): # XXX temp - need to use get_finished() here
+                    for handle, (start_token, end_token, t_done, msg_size, start, req_id, memory_objs) in self._transfers.items(): # XXX temp - need to use get_finished() here
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -353,8 +353,10 @@ class LocalCPUBackend(StorageBackendInterface):
         return kv*strides[0] + layers*strides[1] + tokens*strides[2] + dim*strides[3]
 
     def _get_mem_cpu_desc_ids(self,
-                              memory_objs: list[MemoryObj]) -> list[int]:
+                              memory_objs: list[MemoryObj]) -> Tuple[List[int], int]:
         descs_ids: list[int] = []
+        n_blocks = 0
+        kv_shape = None
 
         for mem_obj in memory_objs:
             base_offset = mem_obj.metadata.address
@@ -368,10 +370,13 @@ class LocalCPUBackend(StorageBackendInterface):
                         assert offset % self.block_len == 0
                         descs_ids.append(offset // self.block_len)
 
-        return descs_ids
+        assert len(descs_ids) % (kv_shape[0] * kv_shape[1]) == 0
+        n_blocks = len(descs_ids) // (kv_shape[0] * kv_shape[1])
+
+        return descs_ids, n_blocks
 
     def _get_gpu_descs_ids(self,
-                           block_ids: list[int]) -> list[int]:
+                           block_ids: list[int]) -> List[int]:
         """
         Get the descs ids for a set of block ids.
         """
@@ -380,16 +385,21 @@ class LocalCPUBackend(StorageBackendInterface):
         num_blocks = self.num_blocks
 
         # Compute the desc ids for each block.
-        descs_ids: list[int] = []
+        descs_ids: List[int] = []
         for reg_id in region_ids:
             for block_id in block_ids:
                 descs_ids.append(reg_id * num_blocks + block_id)
         return descs_ids
 
-    def _h2d_transfer(self, req_id: str, memory_objs: list[MemoryObj], gpu_block_ids: list[int]):
-        cpu_desc_ids = self._get_mem_cpu_desc_ids(memory_objs)
-        gpu_desc_ids = self._get_gpu_descs_ids(gpu_block_ids)
-        logger.debug(f"XXX write to gpu: cpu blocks={len(cpu_desc_ids)}\n gpu blocks={len(gpu_desc_ids)}")
+    def _h2d_transfer(self, req_id: str, memory_objs: list[MemoryObj],
+                      gpu_block_ids: list[int]) -> List[int]:
+        cpu_desc_ids, n_blocks = self._get_mem_cpu_desc_ids(memory_objs)
+        current_gpu_block_ids = gpu_block_ids[:n_blocks]
+        next_gpu_block_ids = gpu_block_ids[n_blocks:]
+
+        logger.info(f"XXXX {current_gpu_block_ids}\n {next_gpu_block_ids}")
+        gpu_desc_ids = self._get_gpu_descs_ids(current_gpu_block_ids)
+        logger.info(f"XXX write to gpu: cpu blocks={len(cpu_desc_ids)} gpu blocks={len(gpu_desc_ids)}")
         start = time.perf_counter()
 
         handle = self._agent.make_prepped_xfer(
@@ -416,13 +426,15 @@ class LocalCPUBackend(StorageBackendInterface):
 
             time.sleep(0.001)  # Avoid busy waitingsleep
 
+        return next_gpu_block_ids
+
     def _recv_transfers_loop(self):
         while self._running:
 
             completed = []
             if self._nixl_operation == "READ":
                 with self._transfers_lock:
-                    for handle, (start_token, k_len, t_done, msg_size, start, req_id, memory_objs) in self._transfers.items():
+                    for handle, (start_token, end_token, t_done, msg_size, start, req_id, memory_objs) in self._transfers.items():
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -434,7 +446,12 @@ class LocalCPUBackend(StorageBackendInterface):
 
                             self._agent.release_xfer_handle(handle)
                             t_done.set()
-                            self._completed_h2h[req_id] = (msg_size, memory_objs)
+                            if req_id not in self._completed_h2h:
+                                self._completed_h2h[req_id] = []
+                            if len(self._completed_h2h[req_id]) > 0:
+                                l_start_token, l_end_token, *_ = self._completed_h2h[req_id][-1]
+                                assert l_end_token  == start_token, f"Error: {l_end_token} != {start_token}"
+                            self._completed_h2h[req_id].append((start_token, end_token, msg_size, memory_objs))
                             completed.append((handle, msg_size, req_id))
 
                     for handle, msg_size, req_id in completed:
@@ -453,12 +470,17 @@ class LocalCPUBackend(StorageBackendInterface):
                             value = self._transfers.pop(handle, None)
 
                         if value is not None:
-                            start_token, k_len, t_done, msg_size, start, req_id, memory_objs = value
+                            start_token, end_token, t_done, msg_size, start, req_id, memory_objs = value
                             end = time.perf_counter()
                             logger.info(f"========== TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
 
                             t_done.set()
-                            self._completed_h2h[req_id] = (msg_size, memory_objs)
+                            if req_id not in self._completed_h2h:
+                                self._completed_h2h[req_id] = []
+                            if len(self._completed_h2h[req_id]) > 0:
+                                l_start_token, end_token, *_ = self._completed_h2h[req_id][-1]
+                                assert end_token == start_token, f"Error: {end_token} != {start_token}"
+                            self._completed_h2h[req_id].append((start_token, end_token, msg_size, memory_objs))
 
             completed = []
             ready_to_xfer = False
@@ -473,16 +495,23 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 if ready_to_xfer:
                     logger.info(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids} size={msg_size}")
-                    msg_size, memory_objs = self._completed_h2h.pop(req_id, None)
+                    msg_list = self._completed_h2h.pop(req_id, None)
 
-                    self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
+                    memory_objs: List[MemoryObj] = []
+                    for msg in msg_list:
+                        logger.info(f"XXXX extend memory_objs {len(memory_objs)}")
+                        memory_objs.extend(msg[3])
+
+                    next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
                     self._req_blocks.pop(req_id, None)
+                    if len(next_gpu_block_ids) > 0:
+                        self._req_blocks[req_id] = next_gpu_block_ids
 
             time.sleep(0.001)  # Avoid busy waiting
 
-    def insert_transfer(self, handle, start_token, keys_len, msg_size, start, req_id, memory_objs):
+    def insert_transfer(self, handle, start_token, end_token, msg_size, start, req_id, memory_objs):
         with self._transfers_lock:
-            self._transfers[handle] = (start_token, keys_len, threading.Event(), msg_size, start, req_id, memory_objs)
+            self._transfers[handle] = (start_token, end_token, threading.Event(), msg_size, start, req_id, memory_objs)
 
     def wait_for_transfer(self, handle):
         t_done = None
@@ -545,8 +574,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 #request = NixlRequest.deserialize(msg)
 
-                req_id, start_token, keys, metadatas, nixl_operation = pickle.loads(msg)
-                logger.debug(f"XXX Received request {req_id} for NIXL {nixl_operation} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
+                req_id, start_token, end_token, keys, metadatas, nixl_operation = pickle.loads(msg)
+                logger.info(f"XXX Received request {req_id} for NIXL {nixl_operation} with {len(keys)}:{len(metadatas)} from sender {sender_id.decode()}")
 
                 l_metadatas = []
                 memory_objs = []
@@ -589,10 +618,10 @@ class LocalCPUBackend(StorageBackendInterface):
                         mem_obj.metadata.handle = handle
 
                     # Begin async xfer.
-                    self.insert_transfer(handle, start_token, len(keys), total_size, start, req_id, memory_objs)
+                    self.insert_transfer(handle, start_token, end_token, total_size, start, req_id, memory_objs)
 
                     self._agent.transfer(handle)
-                    self.batched_submit_put_task([start_token], keys, memory_objs, req_id)
+                    self.batched_submit_put_task([start_token], [end_token], keys, memory_objs, req_id)
 
                     for memory_obj in memory_objs:
                         memory_obj.ref_count_down()
@@ -603,9 +632,9 @@ class LocalCPUBackend(StorageBackendInterface):
                         mem_obj.metadata.handle = handle
 
                     start = time.perf_counter()
-                    self.insert_transfer(handle, start_token, len(keys), total_size, start, req_id, memory_objs)
+                    self.insert_transfer(handle, start_token, end_token, total_size, start, req_id, memory_objs)
 
-                    self.batched_submit_put_task([start_token], keys, memory_objs, req_id)
+                    self.batched_submit_put_task([start_token], [end_token], memory_objs, req_id)
 
                     message = (l_metadatas, handle)
                     data = pickle.dumps(message)
@@ -689,6 +718,7 @@ class LocalCPUBackend(StorageBackendInterface):
     def batched_submit_put_task(
         self,
         starts: List[int],
+        ends: List[int],
         keys: List[CacheEngineKey],
         memory_objs: List[MemoryObj],
         req_id,
@@ -714,7 +744,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         if self._nixl_role == "sender":
             # REMOVE request = NixlRequest(keys=keys, metadatas=metadatas)
-            message = (req_id, starts[0], pushed_keys, metadatas, self._nixl_operation)
+            message = (req_id, starts[0], ends[-1], pushed_keys, metadatas, self._nixl_operation)
             data = pickle.dumps(message)
 
             self._side_channel.send(data)
@@ -756,7 +786,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
                 # XXX TODO: Increase reference count of memory objects till transfer is completed
 
-                self.insert_transfer(handle, starts[0], len(pushed_keys), total_size, start, req_id, None)
+                self.insert_transfer(handle, starts[0], ends[-1], total_size, start, req_id, None)
 
                 # Begin async xfer.
                 self._agent.transfer(handle)
