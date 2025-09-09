@@ -818,6 +818,20 @@ class LMCacheConnectorV1Impl:
         if self.kv_role == "kv_producer":
             return 0, False
 
+        params = request.kv_transfer_params
+        logger.info(
+            "XXXXget_num_new_matched_tokens: "
+            "num_computed_tokens=%s, kv_transfer_params=%s",
+            num_computed_tokens, params)
+
+        if params is not None and params.get("do_remote_prefill"):
+            # Remote prefill: get all prompt blocks from remote.
+            count = len(request.prompt_token_ids) - num_computed_tokens
+            if count > 0:
+                if count == request.num_tokens:
+                    count -= 1
+                return count, False
+
         token_ids = torch.tensor(request.prompt_token_ids)
 
         # If the request has multimodal hashes, apply them to the token ids
@@ -890,8 +904,7 @@ class LMCacheConnectorV1Impl:
 
             # Only trigger 1 KV transfer per request.
             params["do_remote_prefill"] = False
-            #return
-            print(f"XXX need to return HERE")
+            return
 
         self._requests_in_step[request.request_id] = request
 
@@ -993,10 +1006,12 @@ class LMCacheConnectorV1Impl:
                     num_current_tokens : num_current_tokens + num_new_tokens
                 ]
             else:
-                raise ValueError(
-                    f"Request {req_id} is not in _requests_in_step, "
-                    f"but it is scheduled to be cached"
-                )
+                logger.info(f"XXX continue")
+                continue
+                # raise ValueError(
+                #     f"Request {req_id} is not in _requests_in_step, "
+                #     f"but it is scheduled to be cached"
+                #)
             new_block_ids = cached_reqs.new_block_ids[i]
 
             request_tracker.update(new_token_ids, new_block_ids)
