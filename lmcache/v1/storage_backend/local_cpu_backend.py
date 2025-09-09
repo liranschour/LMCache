@@ -321,6 +321,9 @@ class LocalCPUBackend(StorageBackendInterface):
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        if hasattr(self, "_completed_reqs"):
+            for req_id in self._completed_reqs:
+                logger.info(f"XXXX get_finished {req_id}")
         return None, None
 
     def _send_transfers_loop(self):
