@@ -189,6 +189,8 @@ class LocalCPUBackend(StorageBackendInterface):
 
             self._running = True
             # Start Nixl completion thread
+            self._h2d_transfers = {}
+            self._completed_reqs = set()
             self._completed_h2h = {}
             self._req_blocks = {}
             self._transfers = {}
@@ -414,23 +416,22 @@ class LocalCPUBackend(StorageBackendInterface):
 
         self._agent.transfer(handle)
 
-        sender_done = False
-        while not sender_done:
-            state = self._agent.check_xfer_state(handle)
-            if state == "ERR":
-                print("Transfer got to Error state.")
-                exit()
-            elif state == "DONE":
-                self._agent.release_xfer_handle(handle)
-                sender_done = True
+        # sender_done = False
+        # while not sender_done:
+        #     state = self._agent.check_xfer_state(handle)
+        #     if state == "ERR":
+        #         print("Transfer got to Error state.")
+        #         exit()
+        #     elif state == "DONE":
+        #         self._agent.release_xfer_handle(handle)
+        #         sender_done = True
 
-            time.sleep(0.001)  # Avoid busy waitingsleep
+        #     time.sleep(0.001)  # Avoid busy waitingsleep
 
         return handle, next_gpu_block_ids
 
     def _recv_transfers_loop(self):
         while self._running:
-
             completed = []
             if self._nixl_operation == "READ":
                 with self._transfers_lock:
@@ -503,9 +504,36 @@ class LocalCPUBackend(StorageBackendInterface):
                         memory_objs.extend(msg[3])
 
                     handle, next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
+                    if req_id not in self._h2d_transfers:
+                        self._h2d_transfers[req_id] = []
+                    self._h2d_transfers[req_id].append(handle)
+
                     self._req_blocks.pop(req_id, None)
                     if len(next_gpu_block_ids) > 0:
                         self._req_blocks[req_id] = next_gpu_block_ids
+
+            completed_reqs = set()
+            with self._transfers_lock:
+                for req_id, handles in self._h2d_transfers.items():
+                    for handle in handles[:]:
+                        state = self._agent.check_xfer_state(handle)
+
+                        if state == "ERR":
+                            print("Transfer got to Error state.")
+                            exit()
+                        elif state == "DONE":
+                            logger.info(f"XXX transfer completed {handle}")
+
+                            self._agent.release_xfer_handle(handle)
+                            handles.remove(handle)
+                    if len(handles) == 0 and req_id not in self._req_blocks:
+                        # All transfers completed and no more gpu blocks waiting to be written
+                        logger.info(f"XXX req_id completed {req_id}")
+                        completed_reqs.add(req_id)
+
+                for req_id in completed_reqs:
+                    self._h2d_transfers.pop(req_id, None)
+                self._completed_reqs.union(completed_reqs)
 
             time.sleep(0.001)  # Avoid busy waiting
 
