@@ -38,7 +38,7 @@ from lmcache.v1.memory_management import (
 )
 from lmcache.v1.storage_backend.abstract_backend import StorageBackendInterface
 import zmq
-from nixl._api import nixl_agent
+from nixl._api import nixl_agent, nixl_xfer_handle
 import uuid
 from dataclasses import dataclass
 import msgpack
@@ -392,7 +392,7 @@ class LocalCPUBackend(StorageBackendInterface):
         return descs_ids
 
     def _h2d_transfer(self, req_id: str, memory_objs: list[MemoryObj],
-                      gpu_block_ids: list[int]) -> List[int]:
+                      gpu_block_ids: list[int]) -> Tuple[nixl_xfer_handle, List[int]]:
         cpu_desc_ids, n_blocks = self._get_mem_cpu_desc_ids(memory_objs)
         current_gpu_block_ids = gpu_block_ids[:n_blocks]
         next_gpu_block_ids = gpu_block_ids[n_blocks:]
@@ -426,7 +426,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
             time.sleep(0.001)  # Avoid busy waitingsleep
 
-        return next_gpu_block_ids
+        return handle, next_gpu_block_ids
 
     def _recv_transfers_loop(self):
         while self._running:
@@ -502,7 +502,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         logger.info(f"XXXX extend memory_objs {len(memory_objs)}")
                         memory_objs.extend(msg[3])
 
-                    next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
+                    handle, next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
                     self._req_blocks.pop(req_id, None)
                     if len(next_gpu_block_ids) > 0:
                         self._req_blocks[req_id] = next_gpu_block_ids
