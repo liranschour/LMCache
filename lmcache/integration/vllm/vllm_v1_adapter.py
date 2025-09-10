@@ -830,7 +830,7 @@ class LMCacheConnectorV1Impl:
             if count > 0:
                 if count == request.num_tokens:
                     count -= 1
-                return count, False
+                return count, True
 
         token_ids = torch.tensor(request.prompt_token_ids)
 
