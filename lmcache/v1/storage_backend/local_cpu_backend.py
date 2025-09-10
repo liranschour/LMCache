@@ -321,10 +321,15 @@ class LocalCPUBackend(StorageBackendInterface):
     def get_finished(
         self, finished_req_ids: set[str]
     ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        done_recv = set()
         if hasattr(self, "_completed_reqs"):
-            for req_id in self._completed_reqs:
-                logger.info(f"XXXX get_finished {req_id}")
-        return None, None
+            with self._transfers_lock:
+                if len(self._completed_reqs) > 0:
+                    logger.info(f"Completed={len(self._completed_reqs)}")
+                    done_recv.update(self._completed_reqs)
+                    self._completed_reqs.clear()
+
+        return None, done_recv
 
     def _send_transfers_loop(self):
         while self._running:
@@ -402,9 +407,9 @@ class LocalCPUBackend(StorageBackendInterface):
         current_gpu_block_ids = gpu_block_ids[:n_blocks]
         next_gpu_block_ids = gpu_block_ids[n_blocks:]
 
-        logger.info(f"XXXX {current_gpu_block_ids}\n {next_gpu_block_ids}")
         gpu_desc_ids = self._get_gpu_descs_ids(current_gpu_block_ids)
-        logger.info(f"XXX write to gpu: cpu blocks={len(cpu_desc_ids)} gpu blocks={len(gpu_desc_ids)}")
+
+        logger.debug(f"XXX write to gpu: cpu blocks={len(cpu_desc_ids)} gpu blocks={len(gpu_desc_ids)}")
         start = time.perf_counter()
 
         handle = self._agent.make_prepped_xfer(
@@ -498,12 +503,12 @@ class LocalCPUBackend(StorageBackendInterface):
                         break
 
                 if ready_to_xfer:
-                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids} size={msg_size}")
+                    logger.debug(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids} size={msg_size}")
                     msg_list = self._completed_h2h.pop(req_id, None)
 
                     memory_objs: List[MemoryObj] = []
                     for msg in msg_list:
-                        logger.info(f"XXXX extend memory_objs {len(memory_objs)}")
+                        logger.debug(f"XXX extend memory_objs {len(memory_objs)}")
                         memory_objs.extend(msg[3])
 
                     handle, next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
@@ -525,18 +530,20 @@ class LocalCPUBackend(StorageBackendInterface):
                             print("Transfer got to Error state.")
                             exit()
                         elif state == "DONE":
-                            logger.info(f"XXX transfer completed {handle}")
-
                             self._agent.release_xfer_handle(handle)
                             handles.remove(handle)
+
                     if len(handles) == 0 and req_id not in self._req_blocks:
                         # All transfers completed and no more gpu blocks waiting to be written
-                        logger.info(f"XXX req_id completed {req_id}")
+                        logger.info(f"XXX All transfers completed for req_id={req_id}")
                         completed_reqs.add(req_id)
 
-                for req_id in completed_reqs:
-                    self._h2d_transfers.pop(req_id, None)
-                self._completed_reqs.union(completed_reqs)
+                if len(completed_reqs) > 0:
+                    for req_id in completed_reqs:
+                        self._h2d_transfers.pop(req_id, None)
+
+                    self._completed_reqs.update(completed_reqs)
+                    completed_reqs.clear()
 
             time.sleep(0.001)  # Avoid busy waiting
 

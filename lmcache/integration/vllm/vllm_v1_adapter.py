@@ -515,7 +515,7 @@ class LMCacheConnectorV1Impl:
 
         attn_metadata = forward_context.attn_metadata
         if attn_metadata is None:
-            logger.warning("In connector.start_load_kv, but the attn_metadata is None")
+            logger.debug("In connector.start_load_kv, but the attn_metadata is None")
             return
 
         assert self.lmcache_engine is not None
@@ -1051,6 +1051,7 @@ class LMCacheConnectorV1Impl:
             return_params["do_remote_decode"] = False
             logger.info(f"XXX {return_params}")
 
+        logger.info(f"XXX {return_params} req_id={request.request_id}")
         return 0, return_params
 
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
