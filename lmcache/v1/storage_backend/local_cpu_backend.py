@@ -410,7 +410,6 @@ class LocalCPUBackend(StorageBackendInterface):
         gpu_desc_ids = self._get_gpu_descs_ids(current_gpu_block_ids)
 
         logger.debug(f"XXX write to gpu: cpu blocks={len(cpu_desc_ids)} gpu blocks={len(gpu_desc_ids)}")
-        start = time.perf_counter()
 
         handle = self._agent.make_prepped_xfer(
             "WRITE",
@@ -511,10 +510,11 @@ class LocalCPUBackend(StorageBackendInterface):
                         logger.debug(f"XXX extend memory_objs {len(memory_objs)}")
                         memory_objs.extend(msg[3])
 
+                    start = time.perf_counter()
                     handle, next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
                     if req_id not in self._h2d_transfers:
                         self._h2d_transfers[req_id] = []
-                    self._h2d_transfers[req_id].append(handle)
+                    self._h2d_transfers[req_id].append((handle, start, msg_size))
 
                     self._req_blocks.pop(req_id, None)
                     if len(next_gpu_block_ids) > 0:
@@ -523,7 +523,7 @@ class LocalCPUBackend(StorageBackendInterface):
             completed_reqs = set()
             with self._transfers_lock:
                 for req_id, handles in self._h2d_transfers.items():
-                    for handle in handles[:]:
+                    for handle, start, msg_size in handles[:]:
                         state = self._agent.check_xfer_state(handle)
 
                         if state == "ERR":
@@ -531,8 +531,9 @@ class LocalCPUBackend(StorageBackendInterface):
                             exit()
                         elif state == "DONE":
                             self._agent.release_xfer_handle(handle)
-                            handles.remove(handle)
-                            logger.info(f"XXX transfer {handle} completed for req_id={req_id}")
+                            handles.remove((handle, start, msg_size))
+                            end = time.perf_counter()
+                            logger.info(f"========== H2D TRANSFER completed:  {msg_size/(1<<20):.2f} MB BW: {msg_size/((end - start) * (1 << 30)):.3f} GB/s")
 
                     if len(handles) == 0 and req_id not in self._req_blocks:
                         # All transfers completed and no more gpu blocks waiting to be written
