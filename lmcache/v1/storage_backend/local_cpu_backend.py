@@ -500,7 +500,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         break
 
                 if ready_to_xfer:
-                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids}")
+                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={len(gpu_block_ids)}")
                     transfer_list = self._completed_h2h.pop(req_id, None)
 
                     memory_objs: List[MemoryObj] = []
