@@ -490,7 +490,6 @@ class LocalCPUBackend(StorageBackendInterface):
                                 assert end_token == start_token, f"Error: {end_token} != {start_token}"
                             self._completed_h2h[req_id].append((start_token, end_token, msg_size, memory_objs))
 
-            completed = []
             ready_to_xfer = False
             req_id = None
             gpu_block_ids = None
@@ -498,24 +497,27 @@ class LocalCPUBackend(StorageBackendInterface):
                 for req_id, gpu_block_ids in self._req_blocks.items():
                     if req_id in self._completed_h2h:
                         ready_to_xfer = True
-                        completed.append(req_id)
                         break
 
                 if ready_to_xfer:
-                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids} size={msg_size}")
-                    msg_list = self._completed_h2h.pop(req_id, None)
+                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids}")
+                    transfer_list = self._completed_h2h.pop(req_id, None)
 
                     memory_objs: List[MemoryObj] = []
-                    for msg in msg_list:
+                    msg_size = 0
+                    for xfer in transfer_list:
                         logger.debug(f"XXX extend memory_objs {len(memory_objs)}")
-                        memory_objs.extend(msg[3])
+                        memory_objs.extend(xfer[3])
+                        msg_size += xfer[2]
 
                     start = time.perf_counter()
                     handle, next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
+
                     if req_id not in self._h2d_transfers:
                         self._h2d_transfers[req_id] = []
                     self._h2d_transfers[req_id].append((handle, start, msg_size))
 
+                    # Adjust pending gpu_blocks
                     self._req_blocks.pop(req_id, None)
                     if len(next_gpu_block_ids) > 0:
                         self._req_blocks[req_id] = next_gpu_block_ids
