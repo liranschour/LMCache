@@ -503,7 +503,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         break
 
                 if ready_to_xfer:
-                    logger.debug(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids} size={msg_size}")
+                    logger.info(f"XXX Start h2d transfer req={req_id} blocks={gpu_block_ids} size={msg_size}")
                     msg_list = self._completed_h2h.pop(req_id, None)
 
                     memory_objs: List[MemoryObj] = []
@@ -532,6 +532,7 @@ class LocalCPUBackend(StorageBackendInterface):
                         elif state == "DONE":
                             self._agent.release_xfer_handle(handle)
                             handles.remove(handle)
+                            logger.info(f"XXX transfer {handle} completed for req_id={req_id}")
 
                     if len(handles) == 0 and req_id not in self._req_blocks:
                         # All transfers completed and no more gpu blocks waiting to be written
@@ -545,7 +546,7 @@ class LocalCPUBackend(StorageBackendInterface):
                     self._completed_reqs.update(completed_reqs)
                     completed_reqs.clear()
 
-            time.sleep(0.001)  # Avoid busy waiting
+            time.sleep(0.0001)  # Avoid busy waiting
 
     def insert_transfer(self, handle, start_token, end_token, msg_size, start, req_id, memory_objs):
         with self._transfers_lock:
