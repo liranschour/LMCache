@@ -402,7 +402,7 @@ class LocalCPUBackend(StorageBackendInterface):
         return descs_ids
 
     def _h2d_transfer(self, req_id: str, memory_objs: list[MemoryObj],
-                      gpu_block_ids: list[int]) -> Tuple[nixl_xfer_handle, List[int]]:
+                      gpu_block_ids: list[int]) -> Tuple[float, nixl_xfer_handle, List[int]]:
         cpu_desc_ids, n_blocks = self._get_mem_cpu_desc_ids(memory_objs)
         current_gpu_block_ids = gpu_block_ids[:n_blocks]
         next_gpu_block_ids = gpu_block_ids[n_blocks:]
@@ -421,6 +421,7 @@ class LocalCPUBackend(StorageBackendInterface):
             skip_desc_merge=False,
         )
 
+        start = time.perf_counter()
         self._agent.transfer(handle)
 
         # sender_done = False
@@ -435,7 +436,7 @@ class LocalCPUBackend(StorageBackendInterface):
 
         #     time.sleep(0.001)  # Avoid busy waitingsleep
 
-        return handle, next_gpu_block_ids
+        return start, handle, next_gpu_block_ids
 
     def _recv_transfers_loop(self):
         while self._running:
@@ -510,8 +511,8 @@ class LocalCPUBackend(StorageBackendInterface):
                         memory_objs.extend(xfer[3])
                         msg_size += xfer[2]
 
-                    start = time.perf_counter()
-                    handle, next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
+                    #start = time.perf_counter()
+                    start, handle, next_gpu_block_ids = self._h2d_transfer(req_id, memory_objs, gpu_block_ids)
 
                     if req_id not in self._h2d_transfers:
                         self._h2d_transfers[req_id] = []
