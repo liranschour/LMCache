@@ -446,6 +446,11 @@ class LMCacheEngine:
             reordered_starts.extend(start_mapping[location])
             reordered_ends.extend(end_mapping[location])
 
+        tot_kv_size = 0
+        for mem_obj in reordered_memory_objs:
+            tot_kv_size += mem_obj.get_size()
+
+        t = time.perf_counter()
         # NOTE(Jiayi): memory_obj doesn't have to be a pinned
         # cpu tensor for the sake of performance.
         # For example, disk->gpu is faster than disk->cpu->gpu.
@@ -453,6 +458,8 @@ class LMCacheEngine:
         self.gpu_connector.batched_to_gpu(
             reordered_memory_objs, reordered_starts, reordered_ends, **kwargs
         )
+        load_time = time.perf_counter() - t
+        logger.info(f"========== TRANSFER completed:  mem_objs={len(reordered_memory_objs)} size={tot_kv_size/(1<<20):.2f} MB BW: {tot_kv_size/((load_time) * (1 << 30)):.3f} GB/s")
 
         # TODO(Jiayi): Remove the following for loop with batched operations
         for key, memory_obj in zip(reordered_keys, reordered_memory_objs, strict=False):
